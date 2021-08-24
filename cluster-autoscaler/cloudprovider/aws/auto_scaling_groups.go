@@ -21,7 +21,9 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
+	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
 	"k8s.io/autoscaler/cluster-autoscaler/config/dynamic"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -44,6 +46,13 @@ type asgCache struct {
 
 	asgAutoDiscoverySpecs []asgAutoDiscoveryConfig
 	explicitlyConfigured  map[AwsRef]bool
+
+	scaleUpState map[AwsRef]*scaleUpState
+}
+
+type scaleUpState struct {
+	referenceTime      time.Time
+	lastFailedActivity *autoscaling.Activity
 }
 
 type launchTemplate struct {
@@ -54,6 +63,12 @@ type launchTemplate struct {
 type mixedInstancesPolicy struct {
 	launchTemplate         *launchTemplate
 	instanceTypesOverrides []string
+}
+
+type asgActivity struct {
+	activityID    string
+	startTime     time.Time
+	statusMessage string
 }
 
 type asg struct {
@@ -79,6 +94,7 @@ func newASGCache(service autoScalingWrapper, explicitSpecs []string, autoDiscove
 		interrupt:             make(chan struct{}),
 		asgAutoDiscoverySpecs: autoDiscoverySpecs,
 		explicitlyConfigured:  make(map[AwsRef]bool),
+		scaleUpState:          make(map[AwsRef]*scaleUpState),
 	}
 
 	if err := registry.parseExplicitAsgs(explicitSpecs); err != nil {
@@ -222,6 +238,14 @@ func (m *asgCache) setAsgSizeNoLock(asg *asg, size int) error {
 		return err
 	}
 
+	if size > asg.curSize {
+		// We're scaling up, so let's pre-fetch the most recent activity instead of waiting for the next refresh
+		err := m.updateReferenceActivity(asg.AwsRef)
+		if err != nil {
+			klog.Warningf("Unable to populate the reference scale-up activity for group %s: %v", asg.AwsRef.Name, err)
+		}
+	}
+
 	// Proactively set the ASG size so autoscaler makes better decisions
 	asg.curSize = size
 
@@ -359,6 +383,11 @@ func (m *asgCache) regenerate() error {
 		klog.Warningf("Failed to fully populate all launchConfigurations: %v", err)
 	}
 
+	err = m.updateScaleUpState(groups)
+	if err != nil {
+		klog.Warningf("Failed to update the scale-up activity information: %v", err)
+	}
+
 	// If currently any ASG has more Desired than running Instances, introduce placeholders
 	// for the instances to come up. This is required to track Desired instances that
 	// will never come up, like with Spot Request that can't be fulfilled
@@ -388,6 +417,12 @@ func (m *asgCache) regenerate() error {
 	for _, asg := range m.registeredAsgs {
 		if !exists[asg.AwsRef] && !m.explicitlyConfigured[asg.AwsRef] {
 			m.unregister(asg)
+		}
+	}
+
+	for k := range m.scaleUpState {
+		if !exists[k] {
+			delete(m.scaleUpState, k)
 		}
 	}
 
@@ -503,4 +538,112 @@ func (m *asgCache) buildInstanceRefFromAWS(instance *autoscaling.Instance) AwsIn
 // Cleanup closes the channel to signal the go routine to stop that is handling the cache
 func (m *asgCache) Cleanup() {
 	close(m.interrupt)
+}
+
+// updateReferenceActivity populates scaleUpState with the timestamp of the most recent scaling activity, if it's
+// not already present
+func (m *asgCache) updateReferenceActivity(group AwsRef) error {
+	if _, ok := m.scaleUpState[group]; ok {
+		return nil
+	}
+
+	res, err := m.service.DescribeScalingActivities(&autoscaling.DescribeScalingActivitiesInput{
+		AutoScalingGroupName: aws.String(group.Name),
+	})
+	if err != nil {
+		return err
+	}
+
+	if len(res.Activities) > 0 {
+		m.scaleUpState[group] = &scaleUpState{
+			referenceTime: aws.TimeValue(res.Activities[0].StartTime),
+		}
+	}
+
+	return nil
+}
+
+// updateScaleUpErrors populates scaleUpState with the most recent failed scaling activity that happened after the
+// reference time
+func (m *asgCache) updateScaleUpErrors(group AwsRef, state *scaleUpState) error {
+	// We don't want to use DescribeScalingActivitiesPages here because it doesn't really matter. It is extremely
+	// unlikely that we'll end up in a situation where the ASG can't scale up, but neither of the 100 events on the
+	// first page indicate a scale-up error. The only way for this to happen, I think, would be to have 100 instance
+	// terminations happening after the scale-up (which would nicely solve our capacity issues), and even then we
+	// would just pick up the next failure 1 minute later.
+	res, err := m.service.DescribeScalingActivities(&autoscaling.DescribeScalingActivitiesInput{
+		AutoScalingGroupName: aws.String(group.Name),
+	})
+	if err != nil {
+		return err
+	}
+
+	for _, activity := range res.Activities {
+		startTime := aws.TimeValue(activity.StartTime)
+		if !startTime.After(state.referenceTime) {
+			return nil
+		}
+
+		if aws.StringValue(activity.StatusCode) == autoscaling.ScalingActivityStatusCodeFailed {
+			if state.lastFailedActivity != nil && aws.StringValue(state.lastFailedActivity.StatusMessage) != aws.StringValue(activity.StatusMessage) {
+				klog.Warningf("Scale-up error information updated for %s: %s", group.Name, aws.StringValue(activity.StatusMessage))
+			}
+
+			// Update the reference time, this allows us to only process the new events on the next refresh
+			state.referenceTime = aws.TimeValue(activity.StartTime)
+			state.lastFailedActivity = &*activity
+			return nil
+		}
+	}
+	return nil
+}
+
+func (m *asgCache) updateScaleUpState(groups []*autoscaling.Group) error {
+	// Reset the state for the ASGs that are fully scaled up. This is done separately to ensure that we
+	// process all groups.
+	for _, group := range groups {
+		ref := AwsRef{Name: aws.StringValue(group.AutoScalingGroupName)}
+		if int(aws.Int64Value(group.DesiredCapacity)) <= len(group.Instances) {
+			delete(m.scaleUpState, ref)
+		}
+	}
+
+	// Populate/update the scale-up state for the groups that are scaling up.
+	for _, group := range groups {
+		ref := AwsRef{Name: aws.StringValue(group.AutoScalingGroupName)}
+		if int(aws.Int64Value(group.DesiredCapacity)) <= len(group.Instances) {
+			continue
+		}
+
+		// If we already have a timestamp of a scaling activity recorded, see if there are any failed scaling activities
+		// started after that one and use them to signal errors for the corresponding ASGs. If we don't have a timestamp
+		// (because the updateReferenceActivity call failed when we were scaling up), use the most recent activity
+		// as the reference and re-check on the next iteration.
+		if state, ok := m.scaleUpState[ref]; ok {
+			err := m.updateScaleUpErrors(ref, state)
+			if err != nil {
+				return err
+			}
+		} else {
+			err := m.updateReferenceActivity(ref)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (m *asgCache) GetScalingError(ref AwsRef) *cloudprovider.InstanceErrorInfo {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	if state, ok := m.scaleUpState[ref]; ok && state.lastFailedActivity != nil {
+		return &cloudprovider.InstanceErrorInfo{
+			ErrorClass:   cloudprovider.OtherErrorClass,
+			ErrorCode:    aws.StringValue(state.lastFailedActivity.StatusCode),
+			ErrorMessage: aws.StringValue(state.lastFailedActivity.StatusMessage),
+		}
+	}
+	return nil
 }

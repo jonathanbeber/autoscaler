@@ -1080,8 +1080,8 @@ func (csr *ClusterStateRegistry) handleInstanceCreationErrorsForNodeGroup(
 			}
 		}
 
-		klog.V(1).Infof("Failed adding %v nodes (%v unseen previously) to group %v due to %v; errorMessages=%#v", len(instances), len(unseenInstanceIds), nodeGroup.Id(), errorCode, currentUniqueErrorMessagesForErrorCode[errorCode])
 		if len(unseenInstanceIds) > 0 && csr.IsNodeGroupScalingUp(nodeGroup.Id()) {
+			klog.V(1).Infof("Failed adding %v nodes (%v unseen previously) to group %v due to %v; errorMessages=%#v", len(instances), len(unseenInstanceIds), nodeGroup.Id(), errorCode, currentUniqueErrorMessagesForErrorCode[errorCode])
 			csr.logRecorder.Eventf(
 				apiv1.EventTypeWarning,
 				"ScaleUpFailed",
@@ -1091,9 +1091,21 @@ func (csr *ClusterStateRegistry) handleInstanceCreationErrorsForNodeGroup(
 				errorCode,
 				csr.buildErrorMessageEventString(currentUniqueErrorMessagesForErrorCode[errorCode]))
 
-			// Decrease the scale up request by the number of deleted nodes
-			csr.registerOrUpdateScaleUpNoLock(nodeGroup, -len(unseenInstanceIds), currentTime)
+			// Decrease the scale up request by the number of deleted nodes (leaving one in place if
+			// BackoffNoFullScaleDown is enabled)
+			delta := len(unseenInstanceIds)
+			if csr.config.BackoffNoFullScaleDown {
+				delta -= 1
+			}
+			if delta > 0 {
+				csr.registerOrUpdateScaleUpNoLock(nodeGroup, -delta, currentTime)
+			}
 			csr.registerFailedScaleUpNoLock(nodeGroup, metrics.FailedScaleUpReason(errorCode.code), errorCode.class, errorCode.code, currentTime)
+			// Similar to timeout handling logic in updateScaleRequests. If we don't clean up the scale-up, the ASG
+			// would not be marked as backed-off in the metrics/status configmap until this times out. No idea why
+			// the upstream code doesn't do this, don't really want to dig into it more.
+			// ¯\_(ツ)_/¯
+			delete(csr.scaleUpRequests, nodeGroup.Id())
 		}
 	}
 }

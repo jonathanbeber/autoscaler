@@ -604,3 +604,52 @@ func TestNodeNotReadyCustomTaint(t *testing.T) {
 			ExpectCommands(zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandDeleteNodes, nodeGroup: "ng-2", nodeNames: []string{"i-1"}})
 	})
 }
+
+func TestCloudProviderScalingError(t *testing.T) {
+	opts := defaultZalandoAutoscalingOptions()
+
+	RunSimulation(t, opts, 10*time.Second, func(env *zalandoTestEnv) {
+		env.AddNodeGroup("ng-fallback", 10, resource.MustParse("4"), resource.MustParse("32Gi"), nil)
+		env.AddNodeGroup("ng-1", 10, resource.MustParse("4"), resource.MustParse("32Gi"), map[string]string{labelScalePriority: "100"})
+
+		p1 := NewTestPod("foo-1", resource.MustParse("1"), resource.MustParse("24Gi"))
+		p2 := NewTestPod("foo-2", resource.MustParse("1"), resource.MustParse("24Gi"))
+		p3 := NewTestPod("foo-3", resource.MustParse("1"), resource.MustParse("24Gi"))
+
+		env.AddPod(p1).AddPod(p2).AddPod(p3).
+			StepUntilNextCommand(1*time.Minute).
+			ExpectCommands(zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandIncreaseSize, nodeGroup: "ng-1", delta: 3}).
+			SetScaleUpError("ng-1", "we ran out of servers").
+			StepOnce().StepUntilNextCommand(1*time.Minute).
+			ExpectCommands(
+				// Remove the two placeholder nodes, keeping one in place
+				zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandDeleteNodes, nodeGroup: "ng-1", nodeNames: []string{"zalando-test:///ng-1/i-placeholder-1", "zalando-test:///ng-1/i-placeholder-2"}},
+
+				// Fallback to the other node group
+				zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandIncreaseSize, nodeGroup: "ng-fallback", delta: 3},
+			).
+			ExpectTargetSize("ng-1", 1).
+			ExpectBackedOff("ng-1").
+			AddInstance("ng-fallback", "i-1", false).AddNode("i-1", true).SchedulePod(p1, "i-1").
+			AddInstance("ng-fallback", "i-2", false).AddNode("i-2", true).SchedulePod(p2, "i-2").
+			AddInstance("ng-fallback", "i-3", false).AddNode("i-3", true).SchedulePod(p3, "i-3")
+
+		// Nothing happens while the ASG is still failing
+		env.StepFor(1*time.Hour).
+			ExpectNoCommands().
+			ExpectTargetSize("ng-1", 1).
+			ExpectBackedOff("ng-1")
+
+		// Once we get instances back, we reset the backoff and treat them normally
+		env.ResetScaleUpError("ng-1").
+			AddInstance("ng-1", "i-4", false).AddNode("i-4", true).
+			StepFor(1*time.Minute).
+			ExpectNoCommands().
+			ExpectTargetSize("ng-1", 1).
+			ExpectNotBackedOff("ng-1")
+
+		// The instance should be scaled down since it's unused
+		env.StepFor(10 * time.Minute).
+			ExpectCommands(zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandDeleteNodes, nodeGroup: "ng-1", nodeNames: []string{"i-4"}})
+	})
+}

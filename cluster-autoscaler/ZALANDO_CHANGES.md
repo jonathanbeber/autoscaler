@@ -51,11 +51,8 @@ is unsupported and will likely not work correctly.
 
 ## More reliable backoff logic
 
-We often run into issues with instance availability for particular node group in our clusters. Because the AWS cloud
-provider doesn't support properly reporting scale-up errors, we have to rely on the scale-up timeout logic to recognise
-these issues and trigger a fallback. When the upstream version detects a scale-up timeout, it marks the node group as
-failed (with an exponential backoff starting at 5 minutes and a maximum of 30 minutes) and resets the scale-up
-on the cloud provider side.
+When the upstream version detects a scale-up timeout, it marks the node group as failed (with an exponential backoff
+starting at 5 minutes and a maximum of 30 minutes) and resets the scale-up on the cloud provider side.
 
 This logic, however, is rather problematic in clusters where a significant number of node groups could be affected at
 the same time. Let's say we have 4 node groups, `n1` to `n4`, a scale-up timeout of 7 minutes (which might be hard to
@@ -79,6 +76,13 @@ expire) and resets the size on the cloud provider side to the current capacity p
 considered in future scale-up attempts, and the backoff is cleared only when the requested instance joins the cluster.
 The autoscaler also exposes the current state of the node groups in its metrics, allowing the operators to monitor the
 backoffs.
+
+## Active ASG health checks using scaling activity information
+
+AWS cloud provider implementation actively checks the scaling activity history for all ASGs that are scaling up. If a
+new failed activity is detected, the ASG is immediately marked as unhealthy, which places it into the backoff state and
+triggers a failover to other available ASGs. This is treated similarly to a scale-up timeout, so all the modifications
+listed above still apply (i.e. the ASG is not scaled down fully, leaving one node in place). 
 
 ## Improved handling of template nodes
 

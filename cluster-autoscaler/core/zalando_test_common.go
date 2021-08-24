@@ -254,6 +254,7 @@ type zalandoTestCloudProviderNodeGroup struct {
 	instances     sets.String
 	templateNode  *schedulernodeinfo.NodeInfo
 	handleCommand func(command zalandoCloudProviderCommand)
+	scaleUpError  string
 
 	cachedInstances []cloudprovider.Instance
 }
@@ -327,8 +328,20 @@ func (g *zalandoTestCloudProviderNodeGroup) regenerateCachedInstances() {
 		})
 	}
 	for i := 0; i < g.targetSize-len(g.instances); i++ {
+		var status *cloudprovider.InstanceStatus
+		if g.scaleUpError != "" {
+			status = &cloudprovider.InstanceStatus{
+				State: cloudprovider.InstanceCreating,
+				ErrorInfo: &cloudprovider.InstanceErrorInfo{
+					ErrorClass:   cloudprovider.OtherErrorClass,
+					ErrorCode:    "Failure",
+					ErrorMessage: g.scaleUpError,
+				},
+			}
+		}
 		result = append(result, cloudprovider.Instance{
-			Id: fmt.Sprintf("zalando-test:///%s/i-placeholder-%d", g.id, i),
+			Id:     fmt.Sprintf("zalando-test:///%s/i-placeholder-%d", g.id, i),
+			Status: status,
 		})
 	}
 	g.cachedInstances = result
@@ -651,6 +664,19 @@ func (e *zalandoTestEnv) AddInstance(nodeGroup string, instanceId string, increm
 	}
 	klog.Infof("Added instance %s for node group %s (target size %d -> %d)", instanceId, nodeGroup, currentTargetSize, ng.targetSize)
 	return e
+}
+
+func (e *zalandoTestEnv) SetScaleUpError(nodeGroup string, errorMessage string) *zalandoTestEnv {
+	ng, err := e.cloudProvider.nodeGroup(nodeGroup)
+	require.NoError(e.t, err)
+
+	ng.scaleUpError = errorMessage
+	klog.Infof("Updated scale-up error information for node group %s to %s", nodeGroup, errorMessage)
+	return e
+}
+
+func (e *zalandoTestEnv) ResetScaleUpError(nodeGroup string) *zalandoTestEnv {
+	return e.SetScaleUpError(nodeGroup, "")
 }
 
 func (e *zalandoTestEnv) AddNode(instanceId string, ready bool) *zalandoTestEnv {
