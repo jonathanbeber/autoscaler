@@ -906,7 +906,6 @@ func TestStaticAutoscalerRunOnceWithFilteringOnUpcomingNodesEnabledNoScaleUp(t *
 }
 
 func TestStaticAutoscalerInstaceCreationErrors(t *testing.T) {
-
 	// setup
 	provider := &mockprovider.CloudProvider{}
 

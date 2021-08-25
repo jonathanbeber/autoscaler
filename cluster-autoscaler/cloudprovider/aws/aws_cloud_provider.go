@@ -314,10 +314,20 @@ func (ng *AwsNodeGroup) Nodes() ([]cloudprovider.Instance, error) {
 		return nil, err
 	}
 
+	// We will lock twice, but it'll be easier to handle conflicts in the future.
+	scalingError := ng.awsManager.asgCache.GetScalingError(ng.asg.AwsRef)
+
 	instances := make([]cloudprovider.Instance, len(asgNodes))
 
 	for i, asgNode := range asgNodes {
-		instances[i] = cloudprovider.Instance{Id: asgNode.ProviderID}
+		var status *cloudprovider.InstanceStatus
+		if ng.awsManager.asgCache.isPlaceholderInstance(&asgNode) && scalingError != nil {
+			status = &cloudprovider.InstanceStatus{
+				State:     cloudprovider.InstanceCreating,
+				ErrorInfo: scalingError,
+			}
+		}
+		instances[i] = cloudprovider.Instance{Id: asgNode.ProviderID, Status: status}
 	}
 	return instances, nil
 }

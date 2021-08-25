@@ -644,6 +644,15 @@ func (a *StaticAutoscaler) deleteCreatedNodesWithErrors() {
 	}
 
 	for nodeGroupId, nodesToBeDeleted := range nodesToBeDeletedByNodeGroupId {
+		// If BackoffNoFullScaleDown is enabled, keep the node group scaled up, so we could determine if it's still
+		// unhealthy on the cloud provider side.
+		if a.AutoscalingOptions.BackoffNoFullScaleDown {
+			nodesToBeDeleted = nodesToBeDeleted[1:]
+			if len(nodesToBeDeleted) == 0 {
+				continue
+			}
+		}
+
 		var err error
 		klog.V(1).Infof("Deleting %v from %v node group because of create errors", len(nodesToBeDeleted), nodeGroupId)
 
