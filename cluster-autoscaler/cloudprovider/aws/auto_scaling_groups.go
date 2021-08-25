@@ -65,12 +65,6 @@ type mixedInstancesPolicy struct {
 	instanceTypesOverrides []string
 }
 
-type asgActivity struct {
-	activityID    string
-	startTime     time.Time
-	statusMessage string
-}
-
 type asg struct {
 	AwsRef
 
