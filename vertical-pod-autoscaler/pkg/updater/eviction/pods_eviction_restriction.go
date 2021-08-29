@@ -130,7 +130,7 @@ func (e *podsEvictionRestrictionImpl) Evict(podToEvict *apiv1.Pod, eventRecorder
 	}
 
 	if oomkill.HasQuickOomKill(quickOOMWindow, podToEvict) {
-		err := e.client.CoreV1().Pods(podToEvict.Namespace).Delete(podToEvict.Name, &metav1.DeleteOptions{})
+		err := e.client.CoreV1().Pods(podToEvict.Namespace).Delete(context.TODO(), podToEvict.Name, metav1.DeleteOptions{})
 		if err != nil {
 			return fmt.Errorf("failed to delete pod %s/%s: %v", podToEvict.Namespace, podToEvict.Name, err)
 		}
