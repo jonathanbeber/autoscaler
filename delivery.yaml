@@ -8,17 +8,6 @@ pipeline:
   env:
     VERSION: "v0.9.2-internal"
   commands:
-  - desc: "Installing dependencies"
-    cmd: |
-      apt-get update
-      apt-get install libseccomp-dev -qq
-      hack/install-verify-tools.sh
-      go version
-      export PATH=$GOPATH/bin:$PATH
-  - desc: "Verify"
-    cmd: |
-      rm .zappr.yaml
-      hack/verify-all.sh -v
   - desc: "Build and release"
     cmd: |
       if [[ "${CDP_TARGET_BRANCH}" != "zalando-vertical-pod-autoscaler" || -n "${CDP_PULL_REQUEST_NUMBER}" ]]; then
