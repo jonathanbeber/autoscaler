@@ -1,7 +1,7 @@
 # Zalando Changes
 
 The current forked version of the Vertical Pod Autoscaler (VPA) is based on
-upstream **v0.8.0** with a number of changes that we've found useful when
+upstream **v0.9.2** with a number of changes that we've found useful when
 running a significant number of vertical pod autoscaled workloads in
 Kubernetes.
 
@@ -17,7 +17,6 @@ changes around the OOMKill handling to improve this situation:
 
 * Quick OOM detection: handle all containers ([#18](https://github.com/zalando-incubator/autoscaler/pull/18))
 * Always delete pods on quick OOMs ([#21](https://github.com/zalando-incubator/autoscaler/pull/21))
-* Don't skip OOMs, even if their timestamp is earlier ([#23](https://github.com/zalando-incubator/autoscaler/pull/23))
 * Force record a sample in case of OOMKill ([#41](https://github.com/zalando-incubator/autoscaler/pull/41))
 
 ## Variuos small improvements
