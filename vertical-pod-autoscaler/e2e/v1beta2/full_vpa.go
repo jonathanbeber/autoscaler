@@ -17,6 +17,7 @@ limitations under the License.
 package autoscaling
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -34,9 +35,9 @@ import (
 )
 
 const (
-	minimalCPULowerBound    = "20m"
+	minimalCPULowerBound    = "0m"
 	minimalCPUUpperBound    = "100m"
-	minimalMemoryLowerBound = "20Mi"
+	minimalMemoryLowerBound = "0Mi"
 	minimalMemoryUpperBound = "300Mi"
 	// the initial values should be outside minimal bounds
 	initialCPU     = int64(10) // mCPU
@@ -85,7 +86,7 @@ var _ = FullVpaE2eDescribe("Pods under VPA", func() {
 
 		vpaClientSet = vpa_clientset.NewForConfigOrDie(config)
 		vpaClient := vpaClientSet.AutoscalingV1beta2()
-		_, err = vpaClient.VerticalPodAutoscalers(ns).Create(vpaCRD)
+		_, err = vpaClient.VerticalPodAutoscalers(ns).Create(context.TODO(), vpaCRD, metav1.CreateOptions{})
 		gomega.Expect(err).NotTo(gomega.HaveOccurred())
 
 	})
@@ -101,7 +102,7 @@ var _ = FullVpaE2eDescribe("Pods under VPA", func() {
 		rc.ConsumeCPU(600 * replicas)
 		err = waitForResourceRequestInRangeInPods(
 			f, pollTimeout, metav1.ListOptions{LabelSelector: "name=hamster"}, apiv1.ResourceCPU,
-			ParseQuantityOrDie("500m"), ParseQuantityOrDie("900m"))
+			ParseQuantityOrDie("500m"), ParseQuantityOrDie("1000m"))
 		gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	})
 
@@ -152,7 +153,7 @@ var _ = FullVpaE2eDescribe("OOMing pods under VPA", func() {
 
 		vpaClientSet = vpa_clientset.NewForConfigOrDie(config)
 		vpaClient := vpaClientSet.AutoscalingV1beta2()
-		_, err = vpaClient.VerticalPodAutoscalers(ns).Create(vpaCRD)
+		_, err = vpaClient.VerticalPodAutoscalers(ns).Create(context.TODO(), vpaCRD, metav1.CreateOptions{})
 		gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	})
 
@@ -174,7 +175,7 @@ func waitForPodsMatch(f *framework.Framework, timeout time.Duration, listOptions
 		ns := f.Namespace.Name
 		c := f.ClientSet
 
-		podList, err := c.CoreV1().Pods(ns).List(listOptions)
+		podList, err := c.CoreV1().Pods(ns).List(context.TODO(), listOptions)
 		if err != nil {
 			return false, err
 		}

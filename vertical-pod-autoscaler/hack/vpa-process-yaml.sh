@@ -31,8 +31,8 @@ if [ $# -eq 0 ]; then
   exit 1
 fi
 
-DEFAULT_REGISTRY="k8s.gcr.io"
-DEFAULT_TAG="0.6.3"
+DEFAULT_REGISTRY="k8s.gcr.io/autoscaling"
+DEFAULT_TAG="0.8.1"
 
 REGISTRY_TO_APPLY=${REGISTRY-$DEFAULT_REGISTRY}
 TAG_TO_APPLY=${TAG-$DEFAULT_TAG}
