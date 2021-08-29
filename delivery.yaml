@@ -32,7 +32,9 @@ pipeline:
       for f in admission-controller recommender updater; do
         (
           cd vertical-pod-autoscaler/pkg/$f
-          make test-unit
-          make release
+          ALL_ARCHITECTURES=amd64 make test-unit
+          ALL_ARCHITECTURES=amd64 make build-in-docker
+          ALL_ARCHITECTURES=amd64 make docker-build
+          ALL_ARCHITECTURES=amd64 make sub-push-amd64
         )
       done
