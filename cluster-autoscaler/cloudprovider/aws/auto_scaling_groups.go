@@ -578,7 +578,8 @@ func (m *asgCache) updateScaleUpErrors(group AwsRef, state *scaleUpState) error 
 			return nil
 		}
 
-		if aws.StringValue(activity.StatusCode) == autoscaling.ScalingActivityStatusCodeFailed {
+		// ASG errors come up as both 'Failed' and 'Cancelled' for some reason, so we need to handle both.
+		if aws.StringValue(activity.StatusCode) == autoscaling.ScalingActivityStatusCodeFailed || aws.StringValue(activity.StatusCode) == autoscaling.ScalingActivityStatusCodeCancelled {
 			if state.lastFailedActivity != nil && aws.StringValue(state.lastFailedActivity.StatusMessage) != aws.StringValue(activity.StatusMessage) {
 				klog.Warningf("Scale-up error information updated for %s: %s", group.Name, aws.StringValue(activity.StatusMessage))
 			}
