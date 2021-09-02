@@ -586,7 +586,7 @@ func (m *asgCache) updateScaleUpErrors(group AwsRef, state *scaleUpState) error 
 
 			// Update the reference time, this allows us to only process the new events on the next refresh
 			state.referenceTime = aws.TimeValue(activity.StartTime)
-			state.lastFailedActivity = &*activity
+			state.lastFailedActivity = activity
 			return nil
 		}
 	}
