@@ -179,13 +179,18 @@ The upstream version treats Job pods as replicated ones, which means can be term
 long-running jobs, this can result in major delays in completion (if they would complete at all) and lots of wasted
 duplicate work. As a result, our fork treats Job pods as unmovable.
 
-## An attempt at improving the performance of the TopologySpreadConstraint predicate
+## TopologySpreadConstraint emulation
 
 One of the main goals of our update from 1.12 to 1.18 was the support for the `TopologySpreadConstraint` predicate.
 After the initial tests showed major performance issues, we've tried to add some band-aids to the scale-up logic to
 optimise it, but in the end we've had to roll back and disable the predicate completely. Unfortunately, the design of
 both the scheduler framework and the code that uses it is deeply flawed, with some functions scaling quadratically (or
-even higher) with the number of pods, making it completely unusable in medium-sized clusters.   
+even higher) with the number of pods, making it completely unusable in medium-sized clusters.
+
+Instead of trying to fix the TopologySpreadConstraint predicate logic, the autoscaler instead provides support for just
+a single specific configuration. Pending pods that have this spread constraint are treated specially, and the constraint
+is emulated using a much faster algorithm instead of using the very generic but extremely slow upstream code. This
+brings the scaling time from minutes or even hours down to hundreds of milliseconds.
 
 [autoscaling groups with multiple instance types]: https://aws.amazon.com/blogs/aws/new-ec2-auto-scaling-groups-with-multiple-instance-types-purchase-options/
 [correctly detect]: https://github.com/kubernetes/autoscaler/issues/1133

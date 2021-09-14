@@ -149,4 +149,6 @@ type AutoscalingOptions struct {
 	MaxPodEvictionTime time.Duration
 	// Don't cache instances returned by the cloud provider
 	DisableNodeInstancesCache bool
+	// Emulate topology spread constraints using this label
+	EmulatedTopologySpreadConstraintLabel string
 }

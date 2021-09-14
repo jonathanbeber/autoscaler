@@ -174,9 +174,10 @@ var (
 		"Should CA build the template nodes using up-to-date cloud provider configuration instead of a random existing node.")
 	backoffNoFullScaleDown = flag.Bool("backoff-no-full-scale-down", false,
 		"Keep the ASGs in Backoff scaled up to 1 additional instance to detect when the issues are resolved. Backoff duration will be infinite.")
-	maxPodEvictionTime                  = flag.Duration("max-pod-eviction-time", core.MaxPodEvictionTime, "Maximum time CA tries to evict a pod before giving up.")
-	disableNodeInstancesCache     = flag.Bool("disable-node-instances-cache", false, "Disable the cloud provider instance cache.")
-	schedulablePodsAllowScaleDown = flag.Bool("scale-down-ignore-schedulable-pods", false, "Allow scaling down when there are schedulable but not scheduled pods.")
+	maxPodEvictionTime                    = flag.Duration("max-pod-eviction-time", core.MaxPodEvictionTime, "Maximum time CA tries to evict a pod before giving up.")
+	disableNodeInstancesCache             = flag.Bool("disable-node-instances-cache", false, "Disable the cloud provider instance cache.")
+	schedulablePodsAllowScaleDown         = flag.Bool("scale-down-ignore-schedulable-pods", false, "Allow scaling down when there are schedulable but not scheduled pods.")
+	emulatedTopologySpreadConstraintLabel = flag.String("emulated-topology-spread-constraint-label", "parent-resource-hash", "Emulate TopologySpreadConstraint using this label with a faster algorithm")
 
 	ignoreTaintsFlag         = multiStringFlag("ignore-taint", "Specifies a taint to ignore in node templates when considering to scale a node group")
 	awsUseStaticInstanceList = flag.Bool("aws-use-static-instance-list", false, "Should CA fetch instance types in runtime or use a static list. AWS only")
@@ -252,10 +253,11 @@ func createAutoscalingOptions() config.AutoscalingOptions {
 		NodeDeletionDelayTimeout:         *nodeDeletionDelayTimeout,
 		AWSUseStaticInstanceList:         *awsUseStaticInstanceList,
 
-		ScaleUpTemplateFromCloudProvider: *scaleUpTemplateFromCloudProvider,
-		BackoffNoFullScaleDown:           *backoffNoFullScaleDown,
-		MaxPodEvictionTime:               *maxPodEvictionTime,
-		DisableNodeInstancesCache:        *disableNodeInstancesCache,
+		ScaleUpTemplateFromCloudProvider:      *scaleUpTemplateFromCloudProvider,
+		BackoffNoFullScaleDown:                *backoffNoFullScaleDown,
+		MaxPodEvictionTime:                    *maxPodEvictionTime,
+		DisableNodeInstancesCache:             *disableNodeInstancesCache,
+		EmulatedTopologySpreadConstraintLabel: *emulatedTopologySpreadConstraintLabel,
 	}
 }
 

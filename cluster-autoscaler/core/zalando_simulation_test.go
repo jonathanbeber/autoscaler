@@ -20,6 +20,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"math"
 	"os"
 	"testing"
 	"time"
@@ -524,5 +525,116 @@ func TestCloudProviderScalingError(t *testing.T) {
 		// The instance should be scaled down since it's unused
 		env.StepFor(10 * time.Minute).
 			ExpectCommands(zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandDeleteNodes, nodeGroup: "ng-1", nodeNames: []string{"i-4"}})
+	})
+}
+
+func TestEmulatedTopologySpreadConstraint(t *testing.T) {
+	opts := defaultZalandoAutoscalingOptions()
+
+	RunSimulation(t, opts, 10*time.Second, func(env *zalandoTestEnv) {
+		var groups []string
+		groupsPerAZ := map[string][]string{}
+
+		currentNodeIndex := 0
+		currentNodePodCount := 0
+
+		const (
+			poolCount         = 10
+			replicasetCount   = 6
+			scheduledReplicas = 1000
+			pendingReplicas   = 150
+		)
+
+		var (
+			nodeCPU    = resource.MustParse("4")
+			nodeMemory = resource.MustParse("32Gi")
+
+			replicasetPodCPU    = resource.MustParse("1m")
+			replicasetPodMemory = resource.MustParse("2500Mi")
+
+			scheduledPodsPerNode = func() int {
+				count := 0
+				totalCPU := resource.MustParse("0")
+				totalMemory := resource.MustParse("0")
+
+				for {
+					totalCPU.Add(replicasetPodCPU)
+					totalMemory.Add(replicasetPodMemory)
+					if totalCPU.Cmp(nodeCPU) > 0 || totalMemory.Cmp(nodeMemory) > 0 {
+						return count
+					}
+					count++
+				}
+			}()
+		)
+
+		klog.Infof("Pods per node: %d", scheduledPodsPerNode)
+
+		for i := 0; i < poolCount; i++ {
+			for _, az := range []string{"eu-central-1a", "eu-central-1b", "eu-central-1c"} {
+				ngId := fmt.Sprintf("ng-%d-%s", i, az)
+				env.AddNodeGroup(ngId, 10000, nodeCPU, nodeMemory, map[string]string{corev1.LabelZoneFailureDomainStable: az})
+				groupsPerAZ[az] = append(groupsPerAZ[az], ngId)
+				groups = append(groups, ngId)
+			}
+		}
+
+		nextNode := func() {
+			currentNodeIndex++
+			currentNodePodCount = 0
+
+			instanceId := fmt.Sprintf("i-%d", currentNodeIndex)
+
+			env.AddInstance(groups[currentNodeIndex%len(groups)], instanceId, true).
+				AddNode(instanceId, true)
+		}
+
+		nextNode()
+
+		// Create a bunch of replicasets with pods
+		for i := 0; i < replicasetCount; i++ {
+			replicaset := NewTestReplicaSet(fmt.Sprintf("rs-%d", i), scheduledReplicas+pendingReplicas)
+			env.AddReplicaSet(replicaset)
+
+			for j := 0; j < scheduledReplicas; j++ {
+				pod := NewReplicaSetPod(replicaset, replicasetPodCPU, replicasetPodMemory)
+				if currentNodePodCount >= scheduledPodsPerNode {
+					nextNode()
+				}
+				env.AddScheduledPod(WithEmulatedTopologySpreadConstraint(pod, replicaset.Name), fmt.Sprintf("i-%d", currentNodeIndex))
+				currentNodePodCount++
+			}
+
+			for j := 0; j < pendingReplicas; j++ {
+				pod := NewReplicaSetPod(replicaset, replicasetPodCPU, replicasetPodMemory)
+				env.AddPod(WithEmulatedTopologySpreadConstraint(pod, replicaset.Name))
+			}
+		}
+
+		nodesPerAZ := func() map[string]int {
+			result := map[string]int{}
+			for az, nodeGroups := range groupsPerAZ {
+				for _, nodeGroup := range nodeGroups {
+					result[az] += env.GetTargetSize(nodeGroup)
+				}
+			}
+			return result
+		}
+
+		klog.Infof("Total nodes per AZ before scaling up: %v", nodesPerAZ())
+
+		// We should have scaled up fully after just 3 iterations, and it shouldn't take ages
+		env.StepOnce().StepOnce().StepOnce().ConsumeCommands()
+
+		// I don't really want to hardcode the particular set of commands, because we don't care. Let's check that the
+		// ASGs are balanced, and that we don't have too many.
+		klog.Infof("Total nodes per AZ after scaling up: %v", nodesPerAZ())
+
+		expectedNodeCount := int(math.Round(float64(replicasetCount*(scheduledReplicas+pendingReplicas)) / float64(3*scheduledPodsPerNode)))
+		for az, nodeCount := range nodesPerAZ() {
+			require.Contains(t, []int{expectedNodeCount, expectedNodeCount + 1}, nodeCount, "unexpected target size for zone %s: %d (expected ≈%d)", az, nodeCount, expectedNodeCount)
+		}
+
+		env.StepFor(5 * time.Minute).ExpectNoCommands()
 	})
 }

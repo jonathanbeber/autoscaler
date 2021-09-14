@@ -80,6 +80,8 @@ const (
 	zalandoCloudProviderCommandDecreaseTargetSize zalandoCloudProviderCommandType = "decreaseTargetSize"
 
 	testNamespace = "test"
+
+	emulatedTopologySpreadConstraintLabel = "tsc-group"
 )
 
 type customTimeLogWriter struct {
@@ -442,18 +444,19 @@ func defaultZalandoAutoscalingOptions() config.AutoscalingOptions {
 		MaxPodEvictionTime:               2 * time.Minute,
 
 		// customized
-		ExpanderName:                     expander.HighestPriorityExpanderName,
-		ExpendablePodsPriorityCutoff:     -1000000,
-		ScaleDownEnabled:                 true,
-		ScaleDownDelayAfterAdd:           -1 * time.Second,
-		ScaleDownUnneededTime:            10 * time.Minute,
-		ScaleDownUtilizationThreshold:    1.0,
-		BalanceSimilarNodeGroups:         true,
-		MaxNodeProvisionTime:             7 * time.Minute,
-		MaxNodesTotal:                    10000,
-		ScaleUpTemplateFromCloudProvider: true,
-		BackoffNoFullScaleDown:           true,
-		DisableNodeInstancesCache:        true,
+		ExpanderName:                          expander.HighestPriorityExpanderName,
+		ExpendablePodsPriorityCutoff:          -1000000,
+		ScaleDownEnabled:                      true,
+		ScaleDownDelayAfterAdd:                -1 * time.Second,
+		ScaleDownUnneededTime:                 10 * time.Minute,
+		ScaleDownUtilizationThreshold:         1.0,
+		BalanceSimilarNodeGroups:              true,
+		MaxNodeProvisionTime:                  7 * time.Minute,
+		MaxNodesTotal:                         10000,
+		ScaleUpTemplateFromCloudProvider:      true,
+		BackoffNoFullScaleDown:                true,
+		DisableNodeInstancesCache:             true,
+		EmulatedTopologySpreadConstraintLabel: emulatedTopologySpreadConstraintLabel,
 	}
 }
 
@@ -711,7 +714,16 @@ func (e *zalandoTestEnv) AddNode(instanceId string, ready bool) *zalandoTestEnv 
 }
 
 func (e *zalandoTestEnv) AddScheduledPod(pod *corev1.Pod, nodeName string) *zalandoTestEnv {
-	return e.AddPod(pod).SchedulePod(pod, nodeName)
+	_, err := e.client.CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
+	require.NoError(e.t, err, "unknown node: %s", nodeName)
+
+	require.Empty(e.t, pod.Spec.NodeName, "pod already scheduled on %s", pod.Spec.NodeName)
+	pod.Spec.NodeName = nodeName
+
+	_, err = e.client.CoreV1().Pods(pod.Namespace).Create(context.Background(), pod, metav1.CreateOptions{})
+	require.NoError(e.t, err)
+	klog.Infof("Added pod %s/%s on node %s", pod.Namespace, pod.Name, nodeName)
+	return e
 }
 
 func (e *zalandoTestEnv) SchedulePod(pod *corev1.Pod, nodeName string) *zalandoTestEnv {
@@ -817,10 +829,15 @@ func (e *zalandoTestEnv) LogStatus() *zalandoTestEnv {
 }
 
 func (e *zalandoTestEnv) ExpectTargetSize(nodeGroup string, size int) *zalandoTestEnv {
+	targetSize := e.GetTargetSize(nodeGroup)
+	require.Equal(e.t, size, targetSize)
+	return e
+}
+
+func (e *zalandoTestEnv) GetTargetSize(nodeGroup string) int {
 	ng, err := e.cloudProvider.nodeGroup(nodeGroup)
 	require.NoError(e.t, err)
-	require.Equal(e.t, size, ng.targetSize)
-	return e
+	return ng.targetSize
 }
 
 func (e *zalandoTestEnv) nodeGroupConditionStatus(nodeGroup string, conditionType api.ClusterAutoscalerConditionType) (*api.ClusterAutoscalerCondition, error) {
@@ -1155,6 +1172,21 @@ func NewReplicaSetPod(owner *appsv1.ReplicaSet, cpu, memory resource.Quantity) *
 		result.Labels[k] = v
 	}
 	return result
+}
+
+// WithEmulatedTopologySpreadConstraint returns a copy of the provided pod with an added Zalando automatic topology spread constraint
+func WithEmulatedTopologySpreadConstraint(pod *corev1.Pod, groupId string) *corev1.Pod {
+	pod = pod.DeepCopy()
+	pod.Labels[emulatedTopologySpreadConstraintLabel] = groupId
+	pod.Spec.TopologySpreadConstraints = []corev1.TopologySpreadConstraint{
+		{
+			MaxSkew:           1,
+			TopologyKey:       corev1.LabelZoneFailureDomainStable,
+			WhenUnsatisfiable: corev1.DoNotSchedule,
+			LabelSelector:     &metav1.LabelSelector{MatchLabels: map[string]string{emulatedTopologySpreadConstraintLabel: groupId}},
+		},
+	}
+	return pod
 }
 
 // NewTestPod creates an example Pod object
