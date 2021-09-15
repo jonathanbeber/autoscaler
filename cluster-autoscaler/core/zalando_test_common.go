@@ -442,19 +442,18 @@ func defaultZalandoAutoscalingOptions() config.AutoscalingOptions {
 		MaxPodEvictionTime:               2 * time.Minute,
 
 		// customized
-		ExpanderName:                        expander.HighestPriorityExpanderName,
-		ExpendablePodsPriorityCutoff:        -1000000,
-		ScaleDownEnabled:                    true,
-		ScaleDownDelayAfterAdd:              -1 * time.Second,
-		ScaleDownUnneededTime:               10 * time.Minute,
-		ScaleDownUtilizationThreshold:       1.0,
-		BalanceSimilarNodeGroups:            true,
-		MaxNodeProvisionTime:                7 * time.Minute,
-		MaxNodesTotal:                       10000,
-		ScaleUpTemplateFromCloudProvider:    true,
-		BackoffNoFullScaleDown:              true,
-		TopologySpreadConstraintSplitFactor: 3,
-		DisableNodeInstancesCache:           true,
+		ExpanderName:                     expander.HighestPriorityExpanderName,
+		ExpendablePodsPriorityCutoff:     -1000000,
+		ScaleDownEnabled:                 true,
+		ScaleDownDelayAfterAdd:           -1 * time.Second,
+		ScaleDownUnneededTime:            10 * time.Minute,
+		ScaleDownUtilizationThreshold:    1.0,
+		BalanceSimilarNodeGroups:         true,
+		MaxNodeProvisionTime:             7 * time.Minute,
+		MaxNodesTotal:                    10000,
+		ScaleUpTemplateFromCloudProvider: true,
+		BackoffNoFullScaleDown:           true,
+		DisableNodeInstancesCache:        true,
 	}
 }
 

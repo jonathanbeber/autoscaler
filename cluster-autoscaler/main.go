@@ -175,8 +175,6 @@ var (
 	backoffNoFullScaleDown = flag.Bool("backoff-no-full-scale-down", false,
 		"Keep the ASGs in Backoff scaled up to 1 additional instance to detect when the issues are resolved. Backoff duration will be infinite.")
 	maxPodEvictionTime                  = flag.Duration("max-pod-eviction-time", core.MaxPodEvictionTime, "Maximum time CA tries to evict a pod before giving up.")
-	topologySpreadConstraintScaleFactor = flag.Int("topology-spread-constraint-scale-factor", 0,
-		"If pods with topology spread constraints are present, cap the scale-up size at the number of groups divided by the scale factor.")
 	disableNodeInstancesCache     = flag.Bool("disable-node-instances-cache", false, "Disable the cloud provider instance cache.")
 	schedulablePodsAllowScaleDown = flag.Bool("scale-down-ignore-schedulable-pods", false, "Allow scaling down when there are schedulable but not scheduled pods.")
 
@@ -254,11 +252,10 @@ func createAutoscalingOptions() config.AutoscalingOptions {
 		NodeDeletionDelayTimeout:         *nodeDeletionDelayTimeout,
 		AWSUseStaticInstanceList:         *awsUseStaticInstanceList,
 
-		ScaleUpTemplateFromCloudProvider:    *scaleUpTemplateFromCloudProvider,
-		BackoffNoFullScaleDown:              *backoffNoFullScaleDown,
-		MaxPodEvictionTime:                  *maxPodEvictionTime,
-		TopologySpreadConstraintSplitFactor: *topologySpreadConstraintScaleFactor,
-		DisableNodeInstancesCache:           *disableNodeInstancesCache,
+		ScaleUpTemplateFromCloudProvider: *scaleUpTemplateFromCloudProvider,
+		BackoffNoFullScaleDown:           *backoffNoFullScaleDown,
+		MaxPodEvictionTime:               *maxPodEvictionTime,
+		DisableNodeInstancesCache:        *disableNodeInstancesCache,
 	}
 }
 
