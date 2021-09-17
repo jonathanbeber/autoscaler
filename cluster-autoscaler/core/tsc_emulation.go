@@ -58,15 +58,17 @@ func (d azDistributions) distributionFor(distributionId string) azDistribution {
 type topologySpreadEmulationScheduledPodLister struct {
 	base            kubernetes.PodLister
 	constraintLabel string
+	nodeZoneMapping map[string]string
 }
 
-func topologySpreadEmulationWrapScheduledPodLister(base kubernetes.PodLister, options config.AutoscalingOptions) kubernetes.PodLister {
+func topologySpreadEmulationWrapScheduledPodLister(base kubernetes.PodLister, options config.AutoscalingOptions, nodeZoneMapping map[string]string) kubernetes.PodLister {
 	if options.EmulatedTopologySpreadConstraintLabel == "" {
 		return base
 	}
 	return &topologySpreadEmulationScheduledPodLister{
 		base:            base,
 		constraintLabel: options.EmulatedTopologySpreadConstraintLabel,
+		nodeZoneMapping: nodeZoneMapping,
 	}
 }
 
@@ -81,6 +83,14 @@ func (l *topologySpreadEmulationScheduledPodLister) List() ([]*corev1.Pod, error
 		if hasEmulatedTopologySpreadConstraints(pod, l.constraintLabel) {
 			pod = pod.DeepCopy()
 			pod.Spec.TopologySpreadConstraints = nil
+
+			// Pin already scheduled pods to their current zones, to avoid potential issues with downscaling
+			if nodeZone, ok := l.nodeZoneMapping[pod.Spec.NodeName]; ok && nodeZone != "" {
+				if pod.Spec.NodeSelector == nil {
+					pod.Spec.NodeSelector = map[string]string{}
+				}
+				pod.Spec.NodeSelector[corev1.LabelZoneFailureDomainStable] = nodeZone
+			}
 		}
 		result = append(result, pod)
 	}

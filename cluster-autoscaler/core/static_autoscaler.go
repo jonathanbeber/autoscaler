@@ -228,7 +228,7 @@ func (a *StaticAutoscaler) RunOnce(currentTime time.Time) errors.AutoscalerError
 	a.clusterStateRegistry.PeriodicCleanup()
 
 	unschedulablePodLister := a.UnschedulablePodLister()
-	scheduledPodLister := topologySpreadEmulationWrapScheduledPodLister(a.ScheduledPodLister(), a.AutoscalingOptions)
+	scheduledPodLister := a.ScheduledPodLister()
 	pdbLister := a.PodDisruptionBudgetLister()
 	scaleDown := a.scaleDown
 	autoscalingContext := a.AutoscalingContext
@@ -246,6 +246,7 @@ func (a *StaticAutoscaler) RunOnce(currentTime time.Time) errors.AutoscalerError
 
 	availableZones := collectAvailableZones(allNodes)
 	nodeZoneMapping := collectNodeZoneMapping(allNodes)
+	scheduledPodLister = topologySpreadEmulationWrapScheduledPodLister(scheduledPodLister, a.AutoscalingOptions, nodeZoneMapping)
 
 	originalScheduledPods, err := scheduledPodLister.List()
 	if err != nil {
