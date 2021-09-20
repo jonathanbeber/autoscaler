@@ -42,6 +42,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	kuberuntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
@@ -67,17 +68,19 @@ import (
 	v1batchlister "k8s.io/client-go/listers/batch/v1"
 	v1corelister "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/listers/policy/v1beta1"
+	clientgotesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog"
 	schedulernodeinfo "k8s.io/kubernetes/pkg/scheduler/nodeinfo"
 )
 
-type zalandoCloudProviderCommandType string
+type zalandoTestEnvironmentCommandType string
 
 const (
-	zalandoCloudProviderCommandIncreaseSize       zalandoCloudProviderCommandType = "increaseSize"
-	zalandoCloudProviderCommandDeleteNodes        zalandoCloudProviderCommandType = "deleteNodes"
-	zalandoCloudProviderCommandDecreaseTargetSize zalandoCloudProviderCommandType = "decreaseTargetSize"
+	zalandoTestEnvironmentCommandIncreaseSize       zalandoTestEnvironmentCommandType = "increaseSize"
+	zalandoTestEnvironmentCommandDeleteNodes        zalandoTestEnvironmentCommandType = "deleteNodes"
+	zalandoTestEnvironmentCommandDecreaseTargetSize zalandoTestEnvironmentCommandType = "decreaseTargetSize"
+	zalandoTestEnvironmentCommandEvictPod           zalandoTestEnvironmentCommandType = "evictPod"
 
 	testNamespace = "test"
 
@@ -131,21 +134,25 @@ func redirectLogging() {
 	}
 }
 
-type zalandoCloudProviderCommand struct {
-	commandType zalandoCloudProviderCommandType
-	nodeGroup   string
-	delta       int      // for increase/decrease size commands
-	nodeNames   []string // for deleteNodes
+type zalandoTestEnvironmentCommand struct {
+	commandType  zalandoTestEnvironmentCommandType
+	nodeGroup    string
+	delta        int      // for increase/decrease size commands
+	nodeNames    []string // for deleteNodes
+	podNamespace string   // for evictPod
+	podName      string   // for evictPod
 }
 
-func (cmd zalandoCloudProviderCommand) String() string {
+func (cmd zalandoTestEnvironmentCommand) String() string {
 	switch cmd.commandType {
-	case zalandoCloudProviderCommandIncreaseSize:
+	case zalandoTestEnvironmentCommandIncreaseSize:
 		return fmt.Sprintf("increaseSize(%s, %+d)", cmd.nodeGroup, cmd.delta)
-	case zalandoCloudProviderCommandDeleteNodes:
+	case zalandoTestEnvironmentCommandDeleteNodes:
 		return fmt.Sprintf("deleteNodes(%s, %s)", cmd.nodeGroup, strings.Join(cmd.nodeNames, ", "))
-	case zalandoCloudProviderCommandDecreaseTargetSize:
+	case zalandoTestEnvironmentCommandDecreaseTargetSize:
 		return fmt.Sprintf("decreaseTargetSize(%s, %+d)", cmd.nodeGroup, cmd.delta)
+	case zalandoTestEnvironmentCommandEvictPod:
+		return fmt.Sprintf("evictPod(%s/%s)", cmd.podNamespace, cmd.podName)
 	default:
 		return fmt.Sprintf("<invalid: %s>", cmd.commandType)
 	}
@@ -255,7 +262,7 @@ type zalandoTestCloudProviderNodeGroup struct {
 	targetSize    int
 	instances     sets.String
 	templateNode  *schedulernodeinfo.NodeInfo
-	handleCommand func(command zalandoCloudProviderCommand)
+	handleCommand func(command zalandoTestEnvironmentCommand)
 	scaleUpError  string
 
 	cachedInstances []cloudprovider.Instance
@@ -276,8 +283,8 @@ func (g *zalandoTestCloudProviderNodeGroup) TargetSize() (int, error) {
 }
 
 func (g *zalandoTestCloudProviderNodeGroup) IncreaseSize(delta int) error {
-	g.handleCommand(zalandoCloudProviderCommand{
-		commandType: zalandoCloudProviderCommandIncreaseSize,
+	g.handleCommand(zalandoTestEnvironmentCommand{
+		commandType: zalandoTestEnvironmentCommandIncreaseSize,
 		nodeGroup:   g.id,
 		delta:       delta,
 	})
@@ -290,8 +297,8 @@ func (g *zalandoTestCloudProviderNodeGroup) DeleteNodes(nodes []*corev1.Node) er
 		nodeNames = append(nodeNames, node.Name)
 	}
 	sort.Strings(nodeNames)
-	g.handleCommand(zalandoCloudProviderCommand{
-		commandType: zalandoCloudProviderCommandDeleteNodes,
+	g.handleCommand(zalandoTestEnvironmentCommand{
+		commandType: zalandoTestEnvironmentCommandDeleteNodes,
 		nodeGroup:   g.id,
 		nodeNames:   nodeNames,
 	})
@@ -300,8 +307,8 @@ func (g *zalandoTestCloudProviderNodeGroup) DeleteNodes(nodes []*corev1.Node) er
 }
 
 func (g *zalandoTestCloudProviderNodeGroup) DecreaseTargetSize(delta int) error {
-	g.handleCommand(zalandoCloudProviderCommand{
-		commandType: zalandoCloudProviderCommandDecreaseTargetSize,
+	g.handleCommand(zalandoTestEnvironmentCommand{
+		commandType: zalandoTestEnvironmentCommandDecreaseTargetSize,
 		nodeGroup:   g.id,
 		delta:       delta,
 	})
@@ -479,7 +486,7 @@ type zalandoTestEnv struct {
 	statefulsetIndexer           cache.Indexer
 	cloudProvider                *zalandoTestCloudProvider
 	autoscaler                   *StaticAutoscaler
-	pendingCommands              []zalandoCloudProviderCommand
+	pendingCommands              []zalandoTestEnvironmentCommand
 }
 
 func (e *zalandoTestEnv) AddNodeGroup(id string, maxSize int, nodeCPU, nodeMemory resource.Quantity, nodeLabels map[string]string) *zalandoTestEnv {
@@ -509,8 +516,9 @@ func (e *zalandoTestEnv) replicaSetsUpdated() {
 	require.NoError(e.t, err)
 	for _, item := range res.Items {
 		item := item
-		result = append(result, item)
+		result = append(result, &item)
 	}
+	require.NoError(e.t, e.replicasetIndexer.Replace(result, uuid.New().String()))
 }
 
 func (e *zalandoTestEnv) AddReplicaSet(replicaset *appsv1.ReplicaSet) *zalandoTestEnv {
@@ -580,7 +588,7 @@ func (e *zalandoTestEnv) StepUntilNextCommand(timeout time.Duration) *zalandoTes
 	}
 }
 
-func (e *zalandoTestEnv) StepUntilCommand(maxTime time.Duration, command zalandoCloudProviderCommand) *zalandoTestEnv {
+func (e *zalandoTestEnv) StepUntilCommand(maxTime time.Duration, command zalandoTestEnvironmentCommand) *zalandoTestEnv {
 	deadline := e.currentTime.Add(maxTime)
 	for {
 		for _, cmd := range e.pendingCommands {
@@ -596,7 +604,7 @@ func (e *zalandoTestEnv) StepUntilCommand(maxTime time.Duration, command zalando
 	}
 }
 
-func (e *zalandoTestEnv) ConsumeCommands() []zalandoCloudProviderCommand {
+func (e *zalandoTestEnv) ConsumeCommands() []zalandoTestEnvironmentCommand {
 	result := e.pendingCommands
 	e.pendingCommands = nil
 	return result
@@ -607,33 +615,33 @@ func (e *zalandoTestEnv) ExpectNoCommands() *zalandoTestEnv {
 	return e
 }
 
-func (e *zalandoTestEnv) ExpectCommands(commands ...zalandoCloudProviderCommand) *zalandoTestEnv {
+func (e *zalandoTestEnv) ExpectCommands(commands ...zalandoTestEnvironmentCommand) *zalandoTestEnv {
 	require.EqualValues(e.t, commands, e.pendingCommands)
 	e.pendingCommands = nil
 	return e
 }
 
-func (e *zalandoTestEnv) handleCommand(command zalandoCloudProviderCommand) {
+func (e *zalandoTestEnv) handleCommand(command zalandoTestEnvironmentCommand) {
 	ensureSameGoroutine(e.expectedGID)
 
-	klog.Infof("Received a node group command: %s", command)
+	klog.Infof("Received a command: %s", command)
 
 	switch command.commandType {
-	case zalandoCloudProviderCommandIncreaseSize:
+	case zalandoTestEnvironmentCommandIncreaseSize:
 		ng, err := e.cloudProvider.nodeGroup(command.nodeGroup)
 		require.NoError(e.t, err)
 		require.True(e.t, command.delta >= 0, "attempted to increase size of %s with invalid delta: %d", command.nodeGroup, command.delta)
 		require.True(e.t, ng.targetSize+command.delta <= ng.maxSize, "attempted to increase size of %s beyond max: current %d, delta %d", command.nodeGroup, ng.targetSize, command.delta)
 
 		ng.targetSize += command.delta
-	case zalandoCloudProviderCommandDecreaseTargetSize:
+	case zalandoTestEnvironmentCommandDecreaseTargetSize:
 		ng, err := e.cloudProvider.nodeGroup(command.nodeGroup)
 		require.NoError(e.t, err)
 		require.True(e.t, command.delta <= 0, "attempted to decrease size of %s with invalid delta: %d", command.nodeGroup, command.delta)
 		require.True(e.t, ng.targetSize+command.delta >= len(ng.instances), "attempted to decrease size of %s beyond the number of instances: current %d, delta %d, instances %d", command.nodeGroup, ng.targetSize, command.delta, len(ng.instances))
 
 		ng.targetSize += command.delta
-	case zalandoCloudProviderCommandDeleteNodes:
+	case zalandoTestEnvironmentCommandDeleteNodes:
 		ng, err := e.cloudProvider.nodeGroup(command.nodeGroup)
 		require.NoError(e.t, err)
 
@@ -643,6 +651,13 @@ func (e *zalandoTestEnv) handleCommand(command zalandoCloudProviderCommand) {
 			}
 		}
 		ng.targetSize -= len(command.nodeNames)
+	case zalandoTestEnvironmentCommandEvictPod:
+		err := e.client.Tracker().Delete(schema.GroupVersionResource{
+			Group:    "",
+			Version:  "v1",
+			Resource: "pods",
+		}, command.podNamespace, command.podName)
+		require.NoError(e.t, err)
 	default:
 		require.FailNowf(e.t, "invalid command", "received invalid command: %s", command.commandType)
 	}
@@ -1012,8 +1027,38 @@ func (f *printRecorder) AnnotatedEventf(object kuberuntime.Object, annotations m
 func RunSimulation(t *testing.T, options config.AutoscalingOptions, interval time.Duration, testFn func(env *zalandoTestEnv)) {
 	processorCallbacks := newStaticAutoscalerProcessorCallbacks()
 	clientset := fake.NewSimpleClientset()
-
+	initialTime := time.Date(2020, 01, 01, 00, 00, 00, 0, time.UTC)
 	provider := newZalandoTestCloudProvider(scalercontext.NewResourceLimiterFromAutoscalingOptions(options), getGID())
+
+	env := &zalandoTestEnv{
+		t:             t,
+		expectedGID:   getGID(),
+		interval:      interval,
+		client:        clientset,
+		initialTime:   initialTime,
+		currentTime:   initialTime,
+		cloudProvider: provider,
+	}
+	clientset.PrependReactor("create", "pods", func(action clientgotesting.Action) (handled bool, ret kuberuntime.Object, err error) {
+		if action.GetSubresource() == "eviction" {
+			caction, ok := action.(clientgotesting.CreateAction)
+			if !ok {
+				panic(fmt.Sprintf("unexpected type: %t", action))
+			}
+			meta, err := meta.Accessor(caction.GetObject())
+			if err != nil {
+				panic(fmt.Sprintf("object has no meta: %v", err))
+			}
+
+			env.handleCommand(zalandoTestEnvironmentCommand{
+				commandType:  zalandoTestEnvironmentCommandEvictPod,
+				podNamespace: meta.GetNamespace(),
+				podName:      meta.GetName(),
+			})
+			return true, caction.GetObject(), nil
+		}
+		return false, nil, nil
+	})
 
 	recorder := &printRecorder{}
 	statusRecorder, err := utils.NewStatusMapRecorder(clientset, "kube-system", recorder, false)
@@ -1027,12 +1072,12 @@ func RunSimulation(t *testing.T, options config.AutoscalingOptions, interval tim
 	predicateChecker, err := simulator.NewSchedulerBasedPredicateChecker(clientset, closeChannel)
 	require.NoError(t, err)
 
-	pdbIndexer := makeIndexer()
-	daemonsetIndexer := makeIndexer()
-	replicationControllerIndexer := makeIndexer()
-	jobIndexer := makeIndexer()
-	replicasetIndexer := makeIndexer()
-	statefulsetIndexer := makeIndexer()
+	env.pdbIndexer = makeIndexer()
+	env.daemonsetIndexer = makeIndexer()
+	env.replicationControllerIndexer = makeIndexer()
+	env.jobIndexer = makeIndexer()
+	env.replicasetIndexer = makeIndexer()
+	env.statefulsetIndexer = makeIndexer()
 
 	listers := kube_util.NewListerRegistry(
 		&fakeClientNodeLister{client: clientset},
@@ -1043,12 +1088,12 @@ func RunSimulation(t *testing.T, options config.AutoscalingOptions, interval tim
 		&fakeClientPodLister{client: clientset, filter: func(pod *corev1.Pod) bool {
 			return pod.Spec.NodeName == ""
 		}},
-		&pdbLister{lister: v1beta1.NewPodDisruptionBudgetLister(pdbIndexer)},
-		v1appslister.NewDaemonSetLister(daemonsetIndexer),
-		v1corelister.NewReplicationControllerLister(replicationControllerIndexer),
-		v1batchlister.NewJobLister(jobIndexer),
-		v1appslister.NewReplicaSetLister(replicasetIndexer),
-		v1appslister.NewStatefulSetLister(statefulsetIndexer))
+		&pdbLister{lister: v1beta1.NewPodDisruptionBudgetLister(env.pdbIndexer)},
+		v1appslister.NewDaemonSetLister(env.daemonsetIndexer),
+		v1corelister.NewReplicationControllerLister(env.replicationControllerIndexer),
+		v1batchlister.NewJobLister(env.jobIndexer),
+		v1appslister.NewReplicaSetLister(env.replicasetIndexer),
+		v1appslister.NewStatefulSetLister(env.statefulsetIndexer))
 
 	autoscalingContext := &scalercontext.AutoscalingContext{
 		AutoscalingOptions: options,
@@ -1082,9 +1127,8 @@ func RunSimulation(t *testing.T, options config.AutoscalingOptions, interval tim
 	clusterState := clusterstate.NewClusterStateRegistry(provider, clusterStateConfig, autoscalingContext.LogRecorder, ngBackoff)
 	sd := NewScaleDown(autoscalingContext, clusterState)
 	sd.runSync = true
-	initialTime := time.Date(2020, 01, 01, 00, 00, 00, 0, time.UTC)
 
-	autoscaler := &StaticAutoscaler{
+	env.autoscaler = &StaticAutoscaler{
 		AutoscalingContext:    autoscalingContext,
 		clusterStateRegistry:  clusterState,
 		lastScaleUpTime:       initialTime,
@@ -1095,28 +1139,11 @@ func RunSimulation(t *testing.T, options config.AutoscalingOptions, interval tim
 		initialized:           true,
 	}
 
-	autoscaler.processors.PodListProcessor = NewFilterOutSchedulablePodListProcessor(true)
+	env.autoscaler.processors.PodListProcessor = NewFilterOutSchedulablePodListProcessor(true)
 	if options.BalanceSimilarNodeGroups {
-		autoscaler.processors.NodeGroupSetProcessor = &nodegroupset.BalancingNodeGroupSetProcessor{
+		env.autoscaler.processors.NodeGroupSetProcessor = &nodegroupset.BalancingNodeGroupSetProcessor{
 			Comparator: nodegroupset.IsAwsNodeInfoSimilar,
 		}
-	}
-
-	env := &zalandoTestEnv{
-		t:                            t,
-		expectedGID:                  getGID(),
-		interval:                     interval,
-		client:                       clientset,
-		initialTime:                  initialTime,
-		currentTime:                  initialTime,
-		cloudProvider:                provider,
-		pdbIndexer:                   pdbIndexer,
-		daemonsetIndexer:             daemonsetIndexer,
-		replicationControllerIndexer: replicationControllerIndexer,
-		jobIndexer:                   jobIndexer,
-		replicasetIndexer:            replicasetIndexer,
-		statefulsetIndexer:           statefulsetIndexer,
-		autoscaler:                   autoscaler,
 	}
 
 	logWriter.setTestEnvironment(env)

@@ -62,8 +62,8 @@ func TestBrokenScalingTest(t *testing.T) {
 		env.AddPod(NewTestPod("foo", resource.MustParse("1"), resource.MustParse("24Gi")))
 		env.AddPod(NewTestPod("bar", resource.MustParse("1"), resource.MustParse("24Gi")))
 
-		env.StepUntilCommand(20*time.Hour, zalandoCloudProviderCommand{
-			commandType: zalandoCloudProviderCommandIncreaseSize,
+		env.StepUntilCommand(20*time.Hour, zalandoTestEnvironmentCommand{
+			commandType: zalandoTestEnvironmentCommandIncreaseSize,
 			nodeGroup:   "ng-fallback",
 			delta:       2,
 		})
@@ -90,29 +90,29 @@ func TestZalandoScalingTest(t *testing.T) {
 
 		env.StepFor(22*time.Minute).ExpectCommands(
 			// scaled up first
-			zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandIncreaseSize, nodeGroup: "ng-3", delta: 2},
+			zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-3", delta: 2},
 
 			// scaled up once the timeout expires for the first node group. ng-3 is still not scaled down because the incorrect size fixup code lags behind.
-			zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandIncreaseSize, nodeGroup: "ng-2", delta: 2},
+			zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-2", delta: 2},
 
 			// fixNodeGroupSize finally triggers (takes close to another node provisioning timeout to trigger). we still keep a sentinel node, so we expect a scale down by 1 node only.
-			zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandDecreaseTargetSize, nodeGroup: "ng-3", delta: -1},
+			zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandDecreaseTargetSize, nodeGroup: "ng-3", delta: -1},
 
 			// ng-2 times out as well
-			zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandIncreaseSize, nodeGroup: "ng-1", delta: 2},
+			zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-1", delta: 2},
 
 			// ng-2 is scaled down another ~7 minutes later
-			zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandDecreaseTargetSize, nodeGroup: "ng-2", delta: -1},
+			zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandDecreaseTargetSize, nodeGroup: "ng-2", delta: -1},
 
 			// ng-1 times out, so we expect ng-fallback to be tried next
-			zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandIncreaseSize, nodeGroup: "ng-fallback", delta: 2},
+			zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-fallback", delta: 2},
 		)
 		env.AddInstance("ng-fallback", "i-1", false).AddNode("i-1", true).
 			AddInstance("ng-fallback", "i-2", false).AddNode("i-2", true).
 			SchedulePod(p1, "i-1").
 			SchedulePod(p2, "i-2").
 			StepFor(15*time.Minute).
-			ExpectCommands(zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandDecreaseTargetSize, nodeGroup: "ng-1", delta: -1}).
+			ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandDecreaseTargetSize, nodeGroup: "ng-1", delta: -1}).
 			ExpectBackedOff("ng-1").ExpectTargetSize("ng-1", 1).
 			ExpectBackedOff("ng-2").ExpectTargetSize("ng-2", 1).
 			ExpectBackedOff("ng-3").ExpectTargetSize("ng-3", 1).
@@ -141,7 +141,7 @@ func TestZalandoScalingTestRestartBackoff(t *testing.T) {
 		env.SetTargetSize("ng-1", 1)
 
 		env.AddPod(NewTestPod("foo", resource.MustParse("1"), resource.MustParse("24Gi"))).
-			StepUntilCommand(20*time.Minute, zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandIncreaseSize, nodeGroup: "ng-fallback", delta: 1})
+			StepUntilCommand(20*time.Minute, zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-fallback", delta: 1})
 	})
 }
 
@@ -155,7 +155,7 @@ func TestZalandoScalingTestScaleDownBackoff(t *testing.T) {
 
 		env.AddPod(pod).
 			StepUntilNextCommand(1*time.Minute).
-			ExpectCommands(zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandIncreaseSize, nodeGroup: "ng-1", delta: 1}).
+			ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-1", delta: 1}).
 			AddInstance("ng-1", "i-1", false).
 			AddNode("i-1", true).
 			SchedulePod(pod, "i-1")
@@ -163,10 +163,10 @@ func TestZalandoScalingTestScaleDownBackoff(t *testing.T) {
 		pod2 := NewTestPod("bar", resource.MustParse("1"), resource.MustParse("24Gi"))
 		env.AddPod(pod2).
 			StepUntilNextCommand(1*time.Minute).
-			StepUntilCommand(20*time.Minute, zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandIncreaseSize, nodeGroup: "ng-fallback", delta: 1}).
+			StepUntilCommand(20*time.Minute, zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-fallback", delta: 1}).
 			ExpectCommands(
-				zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandIncreaseSize, nodeGroup: "ng-1", delta: 1},
-				zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandIncreaseSize, nodeGroup: "ng-fallback", delta: 1}).
+				zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-1", delta: 1},
+				zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-fallback", delta: 1}).
 			AddInstance("ng-fallback", "i-2", false).
 			AddNode("i-2", true).
 			SchedulePod(pod2, "i-2").
@@ -174,7 +174,7 @@ func TestZalandoScalingTestScaleDownBackoff(t *testing.T) {
 
 		env.RemovePod(pod).
 			StepUntilNextCommand(20*time.Minute).
-			ExpectCommands(zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandDeleteNodes, nodeGroup: "ng-1", nodeNames: []string{"i-1"}}).
+			ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandDeleteNodes, nodeGroup: "ng-1", nodeNames: []string{"i-1"}}).
 			RemoveInstance("i-1", false).
 			RemoveNode("i-1")
 
@@ -194,7 +194,7 @@ func TestMaxSizeIncrease(t *testing.T) {
 
 		env.AddPod(pod).
 			StepOnce().
-			ExpectCommands(zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandIncreaseSize, nodeGroup: "ng-1", delta: 1}).
+			ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-1", delta: 1}).
 			AddInstance("ng-1", "i-1", false).
 			AddNode("i-1", true).
 			SchedulePod(pod, "i-1")
@@ -206,7 +206,7 @@ func TestMaxSizeIncrease(t *testing.T) {
 
 		env.SetMaxSize("ng-1", 2).
 			StepOnce().
-			ExpectCommands(zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandIncreaseSize, nodeGroup: "ng-1", delta: 1})
+			ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-1", delta: 1})
 	})
 }
 
@@ -219,7 +219,7 @@ func TestTemplateNodeChange(t *testing.T) {
 
 		env.AddPod(pod).
 			StepOnce().
-			ExpectCommands(zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandIncreaseSize, nodeGroup: "ng-1", delta: 1}).
+			ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-1", delta: 1}).
 			AddInstance("ng-1", "i-1", false).
 			AddNode("i-1", true).
 			SchedulePod(pod, "i-1")
@@ -231,7 +231,7 @@ func TestTemplateNodeChange(t *testing.T) {
 
 		env.SetTemplateNode("ng-1", resource.MustParse("4"), resource.MustParse("64Gi"), nil).
 			StepOnce().
-			ExpectCommands(zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandIncreaseSize, nodeGroup: "ng-1", delta: 1})
+			ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-1", delta: 1})
 	})
 }
 
@@ -244,7 +244,7 @@ func TestMaxSizeDecrease(t *testing.T) {
 
 		env.AddPod(pod).
 			StepOnce().
-			ExpectCommands(zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandIncreaseSize, nodeGroup: "ng-1", delta: 1}).
+			ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-1", delta: 1}).
 			AddInstance("ng-1", "i-1", false).
 			AddNode("i-1", true).
 			SchedulePod(pod, "i-1")
@@ -266,7 +266,7 @@ func TestAddNodeGroup(t *testing.T) {
 
 		env.AddPod(pod).
 			StepOnce().
-			ExpectCommands(zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandIncreaseSize, nodeGroup: "ng-1", delta: 1}).
+			ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-1", delta: 1}).
 			AddInstance("ng-1", "i-1", false).
 			AddNode("i-1", true).
 			SchedulePod(pod, "i-1")
@@ -278,7 +278,7 @@ func TestAddNodeGroup(t *testing.T) {
 
 		env.AddNodeGroup("ng-2", 10, resource.MustParse("4"), resource.MustParse("64Gi"), nil).
 			StepOnce().
-			ExpectCommands(zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandIncreaseSize, nodeGroup: "ng-2", delta: 1})
+			ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-2", delta: 1})
 	})
 }
 
@@ -292,7 +292,7 @@ func TestRemoveNodeGroup(t *testing.T) {
 
 		env.AddPod(pod).
 			StepOnce().
-			ExpectCommands(zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandIncreaseSize, nodeGroup: "ng-1", delta: 1}).
+			ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-1", delta: 1}).
 			AddInstance("ng-1", "i-1", false).
 			AddNode("i-1", true).
 			SchedulePod(pod, "i-1")
@@ -363,11 +363,11 @@ func TestScaleDownContinuousScaleUp(t *testing.T) {
 		env.AddPod(ng2Pod).AddPod(ng3Pod)
 
 		env.StepOnce().
-			ExpectCommands(zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandIncreaseSize, nodeGroup: "ng-3", delta: 1})
+			ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-3", delta: 1})
 
 		// Run for one more minute; the node in ng-1 should be scaled down but the node in ng-2 should be kept
 		env.StepFor(1*time.Minute).
-			ExpectCommands(zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandDeleteNodes, nodeGroup: "ng-1", nodeNames: []string{"i-1"}}).
+			ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandDeleteNodes, nodeGroup: "ng-1", nodeNames: []string{"i-1"}}).
 			RemoveInstance("i-1", false).
 			RemoveNode("i-1")
 
@@ -396,7 +396,7 @@ func TestDeleteTaintScaleUpDraining(t *testing.T) {
 		// Add a pod, this should trigger a scale-up. Upstream will erroneously consider this node as upcoming.
 		env.AddPod(NewTestPod("foo", resource.MustParse("1"), resource.MustParse("4Gi"))).
 			StepOnce().
-			ExpectCommands(zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandIncreaseSize, nodeGroup: "ng-1", delta: 1})
+			ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-1", delta: 1})
 	})
 }
 
@@ -429,7 +429,7 @@ func TestDeleteTaintScaleUpDeleting(t *testing.T) {
 		// Add a pod, this should trigger a scale-up. Upstream will erroneously consider this node as upcoming.
 		env.AddPod(NewTestPod("foo", resource.MustParse("1"), resource.MustParse("4Gi"))).
 			StepOnce().
-			ExpectCommands(zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandIncreaseSize, nodeGroup: "ng-1", delta: 1})
+			ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-1", delta: 1})
 	})
 }
 
@@ -443,7 +443,7 @@ func TestNodeNotReadyCustomTaint(t *testing.T) {
 		pod := NewTestPod("foo", resource.MustParse("1"), resource.MustParse("4Gi"))
 		env.AddPod(pod).
 			StepOnce().
-			ExpectCommands(zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandIncreaseSize, nodeGroup: "ng-2", delta: 1})
+			ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-2", delta: 1})
 
 		// Add a ready node
 		env.AddInstance("ng-2", "i-1", false).
@@ -464,7 +464,7 @@ func TestNodeNotReadyCustomTaint(t *testing.T) {
 		env.StepFor(opts.MaxNodeProvisionTime).
 			ExpectNoCommands().
 			StepOnce().
-			ExpectCommands(zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandIncreaseSize, nodeGroup: "ng-1", delta: 1})
+			ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-1", delta: 1})
 
 		// Add a node and schedule the pod
 		env.AddInstance("ng-1", "i-2", false).
@@ -475,7 +475,7 @@ func TestNodeNotReadyCustomTaint(t *testing.T) {
 		env.StepFor(opts.ScaleDownUnreadyTime - opts.MaxNodeProvisionTime).
 			ExpectNoCommands().
 			StepOnce().
-			ExpectCommands(zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandDeleteNodes, nodeGroup: "ng-2", nodeNames: []string{"i-1"}})
+			ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandDeleteNodes, nodeGroup: "ng-2", nodeNames: []string{"i-1"}})
 	})
 }
 
@@ -492,15 +492,15 @@ func TestCloudProviderScalingError(t *testing.T) {
 
 		env.AddPod(p1).AddPod(p2).AddPod(p3).
 			StepUntilNextCommand(1*time.Minute).
-			ExpectCommands(zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandIncreaseSize, nodeGroup: "ng-1", delta: 3}).
+			ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-1", delta: 3}).
 			SetScaleUpError("ng-1", "we ran out of servers").
 			StepOnce().StepUntilNextCommand(1*time.Minute).
 			ExpectCommands(
 				// Remove the two placeholder nodes, keeping one in place
-				zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandDeleteNodes, nodeGroup: "ng-1", nodeNames: []string{"zalando-test:///ng-1/i-placeholder-1", "zalando-test:///ng-1/i-placeholder-2"}},
+				zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandDeleteNodes, nodeGroup: "ng-1", nodeNames: []string{"zalando-test:///ng-1/i-placeholder-1", "zalando-test:///ng-1/i-placeholder-2"}},
 
 				// Fallback to the other node group
-				zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandIncreaseSize, nodeGroup: "ng-fallback", delta: 3},
+				zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-fallback", delta: 3},
 			).
 			ExpectTargetSize("ng-1", 1).
 			ExpectBackedOff("ng-1").
@@ -524,7 +524,7 @@ func TestCloudProviderScalingError(t *testing.T) {
 
 		// The instance should be scaled down since it's unused
 		env.StepFor(10 * time.Minute).
-			ExpectCommands(zalandoCloudProviderCommand{commandType: zalandoCloudProviderCommandDeleteNodes, nodeGroup: "ng-1", nodeNames: []string{"i-4"}})
+			ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandDeleteNodes, nodeGroup: "ng-1", nodeNames: []string{"i-4"}})
 	})
 }
 
