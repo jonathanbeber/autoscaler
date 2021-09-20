@@ -17,12 +17,18 @@ limitations under the License.
 package core
 
 import (
+	"time"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/autoscaler/cluster-autoscaler/config"
 	"k8s.io/autoscaler/cluster-autoscaler/utils/kubernetes"
 	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/util/slice"
+)
+
+const (
+	topologySpreadTimeoutAnnotation = "zalando.org/topology-spread-timeout"
 )
 
 type azDistribution map[string]int
@@ -102,9 +108,10 @@ type topologySpreadEmulationUnschedulablePodLister struct {
 	constraintLabel      string
 	availableZones       []string
 	currentDistributions azDistributions
+	currentTime          time.Time
 }
 
-func topologySpreadEmulationWrapUnschedulablePodLister(base kubernetes.PodLister, options config.AutoscalingOptions, availableZones []string, currentDistributions azDistributions) kubernetes.PodLister {
+func topologySpreadEmulationWrapUnschedulablePodLister(base kubernetes.PodLister, options config.AutoscalingOptions, availableZones []string, currentDistributions azDistributions, currentTime time.Time) kubernetes.PodLister {
 	if options.EmulatedTopologySpreadConstraintLabel == "" {
 		return base
 	}
@@ -113,6 +120,7 @@ func topologySpreadEmulationWrapUnschedulablePodLister(base kubernetes.PodLister
 		constraintLabel:      options.EmulatedTopologySpreadConstraintLabel,
 		availableZones:       availableZones,
 		currentDistributions: currentDistributions,
+		currentTime:          currentTime,
 	}
 }
 
@@ -127,19 +135,32 @@ func (l *topologySpreadEmulationUnschedulablePodLister) List() ([]*corev1.Pod, e
 		if distributionId, ok := getDistributionId(pod, l.constraintLabel); ok && hasEmulatedTopologySpreadConstraints(pod, l.constraintLabel) {
 			pod = pod.DeepCopy()
 
-			currentDistribution := l.currentDistributions.distributionFor(distributionId)
-			nextZone := currentDistribution.smallestZone(l.availableZones)
 			pod.Spec.TopologySpreadConstraints = nil
-			if pod.Spec.NodeSelector == nil {
-				pod.Spec.NodeSelector = map[string]string{}
+			if l.timeoutExpired(pod) {
+				klog.V(4).Infof("Timeout expired for pod %s/%s, allowing it to run in any zone", pod.Namespace, pod.Name)
+			} else {
+				currentDistribution := l.currentDistributions.distributionFor(distributionId)
+				nextZone := currentDistribution.smallestZone(l.availableZones)
+				if pod.Spec.NodeSelector == nil {
+					pod.Spec.NodeSelector = map[string]string{}
+				}
+				pod.Spec.NodeSelector[corev1.LabelZoneFailureDomainStable] = nextZone
+				currentDistribution.addPod(nextZone)
+				klog.V(4).Infof("Assigning pod %s/%s to zone %s, changing the distribution to %v", pod.Namespace, pod.Name, nextZone, currentDistribution)
 			}
-			pod.Spec.NodeSelector[corev1.LabelZoneFailureDomainStable] = nextZone
-			currentDistribution.addPod(nextZone)
-			klog.V(4).Infof("Assigning pod %s/%s to zone %s, changing the distribution to %v", pod.Namespace, pod.Name, nextZone, currentDistribution)
 		}
 		result = append(result, pod)
 	}
 	return result, nil
+}
+
+func (l *topologySpreadEmulationUnschedulablePodLister) timeoutExpired(pod *corev1.Pod) bool {
+	if timeoutStr, ok := pod.Annotations[topologySpreadTimeoutAnnotation]; ok {
+		if timeout, err := time.ParseDuration(timeoutStr); err == nil {
+			return pod.CreationTimestamp.Time.Add(timeout).Before(l.currentTime)
+		}
+	}
+	return false
 }
 
 func collectNodeZoneMapping(nodes []*corev1.Node) map[string]string {

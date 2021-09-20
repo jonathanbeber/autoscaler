@@ -192,6 +192,12 @@ a single specific configuration. Pending pods that have this spread constraint a
 is emulated using a much faster algorithm instead of using the very generic but extremely slow upstream code. This
 brings the scaling time from minutes or even hours down to hundreds of milliseconds.
 
+The emulated spread constraints also support the custom `zalando.org/topology-spread-timeout` annotation, which makes it
+possible to automatically disable the constraint after some time. This makes it possible to handle zone outages or
+capacity issues without operator intervention, while at the same time keeping the pods spread between the zones for the
+majority of the time. This requires a custom patch to the scheduler to support the same behaviour and would not work
+with the upstream version.
+
 [autoscaling groups with multiple instance types]: https://aws.amazon.com/blogs/aws/new-ec2-auto-scaling-groups-with-multiple-instance-types-purchase-options/
 [correctly detect]: https://github.com/kubernetes/autoscaler/issues/1133
 [zalando_simulation_test.go]: https://github.com/zalando-incubator/autoscaler/blob/zalando-cluster-autoscaler/cluster-autoscaler/core/zalando_simulation_test.go

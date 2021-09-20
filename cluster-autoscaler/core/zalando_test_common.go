@@ -1161,12 +1161,13 @@ func RunSimulation(t *testing.T, options config.AutoscalingOptions, interval tim
 }
 
 // NewTestReplicaSet creates an example ReplicaSet object
-func NewTestReplicaSet(name string, replicas int32) *appsv1.ReplicaSet {
+func (e *zalandoTestEnv) NewTestReplicaSet(name string, replicas int32) *appsv1.ReplicaSet {
 	return &appsv1.ReplicaSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: testNamespace,
-			Name:      name,
-			UID:       types.UID(uuid.New().String()),
+			Namespace:         testNamespace,
+			Name:              name,
+			UID:               types.UID(uuid.New().String()),
+			CreationTimestamp: metav1.NewTime(e.currentTime),
 		},
 		Spec: appsv1.ReplicaSetSpec{
 			Replicas: &replicas,
@@ -1178,9 +1179,9 @@ func NewTestReplicaSet(name string, replicas int32) *appsv1.ReplicaSet {
 }
 
 // NewReplicaSetPod creates an example Pod object owned by the provided ReplicaSet
-func NewReplicaSetPod(owner *appsv1.ReplicaSet, cpu, memory resource.Quantity) *corev1.Pod {
+func (e *zalandoTestEnv) NewReplicaSetPod(owner *appsv1.ReplicaSet, cpu, memory resource.Quantity) *corev1.Pod {
 	name := fmt.Sprintf("%s-%s", owner.Name, uuid.New().String())
-	result := NewTestPod(name, cpu, memory)
+	result := e.NewTestPod(name, cpu, memory)
 	controller := true
 	result.OwnerReferences = []metav1.OwnerReference{
 		{
@@ -1217,12 +1218,17 @@ func WithEmulatedTopologySpreadConstraint(pod *corev1.Pod, groupId string) *core
 }
 
 // NewTestPod creates an example Pod object
-func NewTestPod(name string, cpu, memory resource.Quantity) *corev1.Pod {
+func (e *zalandoTestEnv) NewTestPod(name string, cpu, memory resource.Quantity) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: testNamespace,
 			Name:      name,
 			UID:       types.UID(uuid.New().String()),
+
+			// This is hardcoded and for some reason different from options.NewPodScaleUpDelay ¯\_(ツ)_/¯. To avoid
+			// having to follow up every single pod addition with StepOnce(), let's just offset the pod creation
+			// time a bit.
+			CreationTimestamp: metav1.NewTime(e.currentTime.Add(-unschedulablePodTimeBuffer)),
 		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{

@@ -259,7 +259,7 @@ func (a *StaticAutoscaler) RunOnce(currentTime time.Time) errors.AutoscalerError
 	}
 
 	existingPodDistribution := a.collectAZDistributions(nodeZoneMapping, originalScheduledPods)
-	unschedulablePodLister = topologySpreadEmulationWrapUnschedulablePodLister(unschedulablePodLister, a.AutoscalingOptions, availableZones, existingPodDistribution)
+	unschedulablePodLister = topologySpreadEmulationWrapUnschedulablePodLister(unschedulablePodLister, a.AutoscalingOptions, availableZones, existingPodDistribution, currentTime)
 
 	daemonsets, err := a.ListerRegistry.DaemonSetLister().List(labels.Everything())
 	if err != nil {

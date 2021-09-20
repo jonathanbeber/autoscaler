@@ -59,8 +59,8 @@ func TestBrokenScalingTest(t *testing.T) {
 
 		env.StepFor(10 * time.Second).ExpectNoCommands()
 
-		env.AddPod(NewTestPod("foo", resource.MustParse("1"), resource.MustParse("24Gi")))
-		env.AddPod(NewTestPod("bar", resource.MustParse("1"), resource.MustParse("24Gi")))
+		env.AddPod(env.NewTestPod("foo", resource.MustParse("1"), resource.MustParse("24Gi")))
+		env.AddPod(env.NewTestPod("bar", resource.MustParse("1"), resource.MustParse("24Gi")))
 
 		env.StepUntilCommand(20*time.Hour, zalandoTestEnvironmentCommand{
 			commandType: zalandoTestEnvironmentCommandIncreaseSize,
@@ -82,8 +82,8 @@ func TestZalandoScalingTest(t *testing.T) {
 
 		env.StepFor(10 * time.Second).ExpectNoCommands()
 
-		p1 := NewTestPod("foo", resource.MustParse("1"), resource.MustParse("24Gi"))
-		p2 := NewTestPod("bar", resource.MustParse("1"), resource.MustParse("24Gi"))
+		p1 := env.NewTestPod("foo", resource.MustParse("1"), resource.MustParse("24Gi"))
+		p2 := env.NewTestPod("bar", resource.MustParse("1"), resource.MustParse("24Gi"))
 
 		env.AddPod(p1)
 		env.AddPod(p2)
@@ -140,7 +140,7 @@ func TestZalandoScalingTestRestartBackoff(t *testing.T) {
 
 		env.SetTargetSize("ng-1", 1)
 
-		env.AddPod(NewTestPod("foo", resource.MustParse("1"), resource.MustParse("24Gi"))).
+		env.AddPod(env.NewTestPod("foo", resource.MustParse("1"), resource.MustParse("24Gi"))).
 			StepUntilCommand(20*time.Minute, zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-fallback", delta: 1})
 	})
 }
@@ -151,7 +151,7 @@ func TestZalandoScalingTestScaleDownBackoff(t *testing.T) {
 		env.AddNodeGroup("ng-fallback", 10, resource.MustParse("4"), resource.MustParse("32Gi"), nil)
 		env.AddNodeGroup("ng-1", 10, resource.MustParse("4"), resource.MustParse("32Gi"), map[string]string{labelScalePriority: "100"})
 
-		pod := NewTestPod("foo", resource.MustParse("1"), resource.MustParse("24Gi"))
+		pod := env.NewTestPod("foo", resource.MustParse("1"), resource.MustParse("24Gi"))
 
 		env.AddPod(pod).
 			StepUntilNextCommand(1*time.Minute).
@@ -160,7 +160,7 @@ func TestZalandoScalingTestScaleDownBackoff(t *testing.T) {
 			AddNode("i-1", true).
 			SchedulePod(pod, "i-1")
 
-		pod2 := NewTestPod("bar", resource.MustParse("1"), resource.MustParse("24Gi"))
+		pod2 := env.NewTestPod("bar", resource.MustParse("1"), resource.MustParse("24Gi"))
 		env.AddPod(pod2).
 			StepUntilNextCommand(1*time.Minute).
 			StepUntilCommand(20*time.Minute, zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-fallback", delta: 1}).
@@ -190,7 +190,7 @@ func TestMaxSizeIncrease(t *testing.T) {
 	RunSimulation(t, opts, 10*time.Second, func(env *zalandoTestEnv) {
 		env.AddNodeGroup("ng-1", 1, resource.MustParse("4"), resource.MustParse("32Gi"), nil)
 
-		pod := NewTestPod("foo", resource.MustParse("1"), resource.MustParse("24Gi"))
+		pod := env.NewTestPod("foo", resource.MustParse("1"), resource.MustParse("24Gi"))
 
 		env.AddPod(pod).
 			StepOnce().
@@ -199,7 +199,7 @@ func TestMaxSizeIncrease(t *testing.T) {
 			AddNode("i-1", true).
 			SchedulePod(pod, "i-1")
 
-		pod2 := NewTestPod("bar", resource.MustParse("1"), resource.MustParse("24Gi"))
+		pod2 := env.NewTestPod("bar", resource.MustParse("1"), resource.MustParse("24Gi"))
 		env.AddPod(pod2).
 			StepFor(10 * time.Minute).
 			ExpectNoCommands()
@@ -215,7 +215,7 @@ func TestTemplateNodeChange(t *testing.T) {
 	RunSimulation(t, opts, 10*time.Second, func(env *zalandoTestEnv) {
 		env.AddNodeGroup("ng-1", 10, resource.MustParse("4"), resource.MustParse("32Gi"), nil)
 
-		pod := NewTestPod("foo", resource.MustParse("1"), resource.MustParse("24Gi"))
+		pod := env.NewTestPod("foo", resource.MustParse("1"), resource.MustParse("24Gi"))
 
 		env.AddPod(pod).
 			StepOnce().
@@ -224,7 +224,7 @@ func TestTemplateNodeChange(t *testing.T) {
 			AddNode("i-1", true).
 			SchedulePod(pod, "i-1")
 
-		pod2 := NewTestPod("bar", resource.MustParse("1"), resource.MustParse("48Gi"))
+		pod2 := env.NewTestPod("bar", resource.MustParse("1"), resource.MustParse("48Gi"))
 		env.AddPod(pod2).
 			StepFor(10 * time.Minute).
 			ExpectNoCommands()
@@ -240,7 +240,7 @@ func TestMaxSizeDecrease(t *testing.T) {
 	RunSimulation(t, opts, 10*time.Second, func(env *zalandoTestEnv) {
 		env.AddNodeGroup("ng-1", 10, resource.MustParse("4"), resource.MustParse("32Gi"), nil)
 
-		pod := NewTestPod("foo", resource.MustParse("1"), resource.MustParse("24Gi"))
+		pod := env.NewTestPod("foo", resource.MustParse("1"), resource.MustParse("24Gi"))
 
 		env.AddPod(pod).
 			StepOnce().
@@ -249,7 +249,7 @@ func TestMaxSizeDecrease(t *testing.T) {
 			AddNode("i-1", true).
 			SchedulePod(pod, "i-1")
 
-		pod2 := NewTestPod("bar", resource.MustParse("1"), resource.MustParse("24Gi"))
+		pod2 := env.NewTestPod("bar", resource.MustParse("1"), resource.MustParse("24Gi"))
 		env.SetMaxSize("ng-1", 1).
 			AddPod(pod2).
 			StepFor(10 * time.Minute).
@@ -262,7 +262,7 @@ func TestAddNodeGroup(t *testing.T) {
 	RunSimulation(t, opts, 10*time.Second, func(env *zalandoTestEnv) {
 		env.AddNodeGroup("ng-1", 10, resource.MustParse("4"), resource.MustParse("32Gi"), nil)
 
-		pod := NewTestPod("foo", resource.MustParse("1"), resource.MustParse("32Gi"))
+		pod := env.NewTestPod("foo", resource.MustParse("1"), resource.MustParse("32Gi"))
 
 		env.AddPod(pod).
 			StepOnce().
@@ -271,7 +271,7 @@ func TestAddNodeGroup(t *testing.T) {
 			AddNode("i-1", true).
 			SchedulePod(pod, "i-1")
 
-		pod2 := NewTestPod("bar", resource.MustParse("1"), resource.MustParse("64Gi"))
+		pod2 := env.NewTestPod("bar", resource.MustParse("1"), resource.MustParse("64Gi"))
 		env.AddPod(pod2).
 			StepFor(10 * time.Minute).
 			ExpectNoCommands()
@@ -288,7 +288,7 @@ func TestRemoveNodeGroup(t *testing.T) {
 		env.AddNodeGroup("ng-1", 10, resource.MustParse("4"), resource.MustParse("32Gi"), map[string]string{labelScalePriority: "110"}).
 			AddNodeGroup("ng-2", 10, resource.MustParse("4"), resource.MustParse("64Gi"), map[string]string{labelScalePriority: "100"})
 
-		pod := NewTestPod("foo", resource.MustParse("1"), resource.MustParse("32Gi"))
+		pod := env.NewTestPod("foo", resource.MustParse("1"), resource.MustParse("32Gi"))
 
 		env.AddPod(pod).
 			StepOnce().
@@ -297,7 +297,7 @@ func TestRemoveNodeGroup(t *testing.T) {
 			AddNode("i-1", true).
 			SchedulePod(pod, "i-1")
 
-		pod2 := NewTestPod("bar", resource.MustParse("1"), resource.MustParse("64Gi"))
+		pod2 := env.NewTestPod("bar", resource.MustParse("1"), resource.MustParse("64Gi"))
 		env.RemoveNodeGroup("ng-2").
 			AddPod(pod2).
 			StepFor(10 * time.Minute).
@@ -316,7 +316,7 @@ func TestSnapshotBug(t *testing.T) {
 			AddNodeGroup("ng-3", 10, resource.MustParse("4"), resource.MustParse("32Gi"), nil)
 
 		for i := 0; i < 5; i++ {
-			env.AddPod(NewTestPod(fmt.Sprintf("foo-%d", i), resource.MustParse("1"), resource.MustParse("20Gi")))
+			env.AddPod(env.NewTestPod(fmt.Sprintf("foo-%d", i), resource.MustParse("1"), resource.MustParse("20Gi")))
 		}
 
 		env.StepFor(30*time.Second).
@@ -327,7 +327,7 @@ func TestSnapshotBug(t *testing.T) {
 			AddInstance("ng-3", "i-5", false)
 
 		for i := 5; i < 10; i++ {
-			env.AddPod(NewTestPod(fmt.Sprintf("foo-%d", i), resource.MustParse("1"), resource.MustParse("20Gi")))
+			env.AddPod(env.NewTestPod(fmt.Sprintf("foo-%d", i), resource.MustParse("1"), resource.MustParse("20Gi")))
 		}
 
 		env.StepFor(2 * time.Minute)
@@ -354,10 +354,10 @@ func TestScaleDownContinuousScaleUp(t *testing.T) {
 		env.StepFor(9 * time.Minute)
 
 		// Add a pod that will trigger a scale-up of ng-3 and a pod that will be schedulable on the node in ng-2
-		ng3Pod := NewTestPod("pod-ng3", resource.MustParse("3"), resource.MustParse("10Gi"))
+		ng3Pod := env.NewTestPod("pod-ng3", resource.MustParse("3"), resource.MustParse("10Gi"))
 		ng3Pod.Spec.NodeSelector = map[string]string{"id": "ng-3"}
 
-		ng2Pod := NewTestPod("pod-ng2", resource.MustParse("3"), resource.MustParse("10Gi"))
+		ng2Pod := env.NewTestPod("pod-ng2", resource.MustParse("3"), resource.MustParse("10Gi"))
 		ng2Pod.Spec.NodeSelector = map[string]string{"id": "ng-2"}
 
 		env.AddPod(ng2Pod).AddPod(ng3Pod)
@@ -394,7 +394,7 @@ func TestDeleteTaintScaleUpDraining(t *testing.T) {
 		env.StepOnce()
 
 		// Add a pod, this should trigger a scale-up. Upstream will erroneously consider this node as upcoming.
-		env.AddPod(NewTestPod("foo", resource.MustParse("1"), resource.MustParse("4Gi"))).
+		env.AddPod(env.NewTestPod("foo", resource.MustParse("1"), resource.MustParse("4Gi"))).
 			StepOnce().
 			ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-1", delta: 1})
 	})
@@ -427,7 +427,7 @@ func TestDeleteTaintScaleUpDeleting(t *testing.T) {
 			StepOnce()
 
 		// Add a pod, this should trigger a scale-up. Upstream will erroneously consider this node as upcoming.
-		env.AddPod(NewTestPod("foo", resource.MustParse("1"), resource.MustParse("4Gi"))).
+		env.AddPod(env.NewTestPod("foo", resource.MustParse("1"), resource.MustParse("4Gi"))).
 			StepOnce().
 			ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-1", delta: 1})
 	})
@@ -440,7 +440,7 @@ func TestNodeNotReadyCustomTaint(t *testing.T) {
 		env.AddNodeGroup("ng-1", 10, resource.MustParse("1"), resource.MustParse("8Gi"), nil).
 			AddNodeGroup("ng-2", 10, resource.MustParse("1"), resource.MustParse("8Gi"), map[string]string{labelScalePriority: "100"})
 
-		pod := NewTestPod("foo", resource.MustParse("1"), resource.MustParse("4Gi"))
+		pod := env.NewTestPod("foo", resource.MustParse("1"), resource.MustParse("4Gi"))
 		env.AddPod(pod).
 			StepOnce().
 			ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-2", delta: 1})
@@ -486,9 +486,9 @@ func TestCloudProviderScalingError(t *testing.T) {
 		env.AddNodeGroup("ng-fallback", 10, resource.MustParse("4"), resource.MustParse("32Gi"), nil)
 		env.AddNodeGroup("ng-1", 10, resource.MustParse("4"), resource.MustParse("32Gi"), map[string]string{labelScalePriority: "100"})
 
-		p1 := NewTestPod("foo-1", resource.MustParse("1"), resource.MustParse("24Gi"))
-		p2 := NewTestPod("foo-2", resource.MustParse("1"), resource.MustParse("24Gi"))
-		p3 := NewTestPod("foo-3", resource.MustParse("1"), resource.MustParse("24Gi"))
+		p1 := env.NewTestPod("foo-1", resource.MustParse("1"), resource.MustParse("24Gi"))
+		p2 := env.NewTestPod("foo-2", resource.MustParse("1"), resource.MustParse("24Gi"))
+		p3 := env.NewTestPod("foo-3", resource.MustParse("1"), resource.MustParse("24Gi"))
 
 		env.AddPod(p1).AddPod(p2).AddPod(p3).
 			StepUntilNextCommand(1*time.Minute).
@@ -593,11 +593,11 @@ func TestEmulatedTopologySpreadConstraint(t *testing.T) {
 
 		// Create a bunch of replicasets with pods
 		for i := 0; i < replicasetCount; i++ {
-			replicaset := NewTestReplicaSet(fmt.Sprintf("rs-%d", i), scheduledReplicas+pendingReplicas)
+			replicaset := env.NewTestReplicaSet(fmt.Sprintf("rs-%d", i), scheduledReplicas+pendingReplicas)
 			env.AddReplicaSet(replicaset)
 
 			for j := 0; j < scheduledReplicas; j++ {
-				pod := NewReplicaSetPod(replicaset, replicasetPodCPU, replicasetPodMemory)
+				pod := env.NewReplicaSetPod(replicaset, replicasetPodCPU, replicasetPodMemory)
 				if currentNodePodCount >= scheduledPodsPerNode {
 					nextNode()
 				}
@@ -606,7 +606,7 @@ func TestEmulatedTopologySpreadConstraint(t *testing.T) {
 			}
 
 			for j := 0; j < pendingReplicas; j++ {
-				pod := NewReplicaSetPod(replicaset, replicasetPodCPU, replicasetPodMemory)
+				pod := env.NewReplicaSetPod(replicaset, replicasetPodCPU, replicasetPodMemory)
 				env.AddPod(WithEmulatedTopologySpreadConstraint(pod, replicaset.Name))
 			}
 		}
@@ -643,10 +643,10 @@ func TestEmulatedTopologySpreadConstraintScaleDownSameZoneBlockedNoCandidates(t 
 	opts := defaultZalandoAutoscalingOptions()
 
 	RunSimulation(t, opts, 10*time.Second, func(env *zalandoTestEnv) {
-		rs := NewTestReplicaSet("foo", 2)
+		rs := env.NewTestReplicaSet("foo", 2)
 
-		rsPod1 := WithEmulatedTopologySpreadConstraint(NewReplicaSetPod(rs, resource.MustParse("1m"), resource.MustParse("8Gi")), rs.Name)
-		rsPod2 := WithEmulatedTopologySpreadConstraint(NewReplicaSetPod(rs, resource.MustParse("1m"), resource.MustParse("8Gi")), rs.Name)
+		rsPod1 := WithEmulatedTopologySpreadConstraint(env.NewReplicaSetPod(rs, resource.MustParse("1m"), resource.MustParse("8Gi")), rs.Name)
+		rsPod2 := WithEmulatedTopologySpreadConstraint(env.NewReplicaSetPod(rs, resource.MustParse("1m"), resource.MustParse("8Gi")), rs.Name)
 
 		env.AddNodeGroup("ng-1", 10000, resource.MustParse("4"), resource.MustParse("32Gi"), map[string]string{corev1.LabelZoneFailureDomainStable: "eu-central-1a"}).
 			AddNodeGroup("ng-2", 10000, resource.MustParse("4"), resource.MustParse("32Gi"), map[string]string{corev1.LabelZoneFailureDomainStable: "eu-central-1b"}).
@@ -666,10 +666,10 @@ func TestEmulatedTopologySpreadConstraintScaleDownSameZone(t *testing.T) {
 	opts := defaultZalandoAutoscalingOptions()
 
 	RunSimulation(t, opts, 10*time.Second, func(env *zalandoTestEnv) {
-		rs := NewTestReplicaSet("foo", 2)
+		rs := env.NewTestReplicaSet("foo", 2)
 
-		rsPod1 := WithEmulatedTopologySpreadConstraint(NewReplicaSetPod(rs, resource.MustParse("1m"), resource.MustParse("8Gi")), rs.Name)
-		rsPod2 := WithEmulatedTopologySpreadConstraint(NewReplicaSetPod(rs, resource.MustParse("1m"), resource.MustParse("8Gi")), rs.Name)
+		rsPod1 := WithEmulatedTopologySpreadConstraint(env.NewReplicaSetPod(rs, resource.MustParse("1m"), resource.MustParse("8Gi")), rs.Name)
+		rsPod2 := WithEmulatedTopologySpreadConstraint(env.NewReplicaSetPod(rs, resource.MustParse("1m"), resource.MustParse("8Gi")), rs.Name)
 
 		env.AddNodeGroup("ng-1", 10000, resource.MustParse("4"), resource.MustParse("32Gi"), map[string]string{corev1.LabelZoneFailureDomainStable: "eu-central-1a"}).
 			AddNodeGroup("ng-2", 10000, resource.MustParse("4"), resource.MustParse("32Gi"), map[string]string{corev1.LabelZoneFailureDomainStable: "eu-central-1b"}).
@@ -679,12 +679,73 @@ func TestEmulatedTopologySpreadConstraintScaleDownSameZone(t *testing.T) {
 			AddReplicaSet(rs).
 			AddScheduledPod(rsPod1, "i-1").
 			AddScheduledPod(rsPod2, "i-2").
-			AddScheduledPod(NewTestPod("blocker", resource.MustParse("1m"), resource.MustParse("1Mi")), "i-3")
+			AddScheduledPod(env.NewTestPod("blocker", resource.MustParse("1m"), resource.MustParse("1Mi")), "i-3")
 
 		// blocker pod can't be moved, and moving rsPod2 on the same node wouldn't break the spread constraints
 		env.StepFor(20*time.Minute).
 			ExpectCommands(
 				zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandEvictPod, podNamespace: rsPod2.Namespace, podName: rsPod2.Name},
 				zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandDeleteNodes, nodeGroup: "ng-2", nodeNames: []string{"i-2"}})
+	})
+}
+
+func TestEmulatedTopologySpreadConstraintScaleUpNoFallback(t *testing.T) {
+	opts := defaultZalandoAutoscalingOptions()
+
+	RunSimulation(t, opts, 10*time.Second, func(env *zalandoTestEnv) {
+		rs := env.NewTestReplicaSet("foo", 2)
+
+		rsPod1 := WithEmulatedTopologySpreadConstraint(env.NewReplicaSetPod(rs, resource.MustParse("1m"), resource.MustParse("30Gi")), rs.Name)
+		rsPod2 := WithEmulatedTopologySpreadConstraint(env.NewReplicaSetPod(rs, resource.MustParse("1m"), resource.MustParse("30Gi")), rs.Name)
+
+		env.AddNodeGroup("ng-1", 10000, resource.MustParse("4"), resource.MustParse("32Gi"), map[string]string{corev1.LabelZoneFailureDomainStable: "eu-central-1a"}).
+			AddNodeGroup("ng-2", 10000, resource.MustParse("4"), resource.MustParse("32Gi"), map[string]string{corev1.LabelZoneFailureDomainStable: "eu-central-1b"}).
+			AddInstance("ng-1", "i-1", true).AddNode("i-1", true).
+			AddInstance("ng-2", "i-2", true).AddNode("i-2", true).
+			AddReplicaSet(rs).
+			AddScheduledPod(rsPod1, "i-1").
+			AddScheduledPod(env.NewTestPod("placeholder", resource.MustParse("4"), resource.MustParse("30Gi")), "i-2").
+			AddPod(rsPod2)
+
+		env.StepOnce().
+			ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-2", delta: 1}).
+			SetScaleUpError("ng-2", "No instances are available")
+
+		// Don't scale up other node groups
+		env.StepFor(20 * time.Minute).ExpectNoCommands()
+	})
+}
+
+func TestEmulatedTopologySpreadConstraintScaleUpFallbackOnTimeout(t *testing.T) {
+	opts := defaultZalandoAutoscalingOptions()
+
+	RunSimulation(t, opts, 10*time.Second, func(env *zalandoTestEnv) {
+		rs := env.NewTestReplicaSet("foo", 2)
+
+		rsPod1 := WithEmulatedTopologySpreadConstraint(env.NewReplicaSetPod(rs, resource.MustParse("1m"), resource.MustParse("30Gi")), rs.Name)
+		rsPod2 := WithEmulatedTopologySpreadConstraint(env.NewReplicaSetPod(rs, resource.MustParse("1m"), resource.MustParse("30Gi")), rs.Name)
+
+		rsPod2.Annotations = map[string]string{
+			topologySpreadTimeoutAnnotation: "13m5s",
+		}
+
+		env.AddNodeGroup("ng-1", 10000, resource.MustParse("4"), resource.MustParse("32Gi"), map[string]string{corev1.LabelZoneFailureDomainStable: "eu-central-1a"}).
+			AddNodeGroup("ng-2", 10000, resource.MustParse("4"), resource.MustParse("32Gi"), map[string]string{corev1.LabelZoneFailureDomainStable: "eu-central-1b"}).
+			AddInstance("ng-1", "i-1", true).AddNode("i-1", true).
+			AddInstance("ng-2", "i-2", true).AddNode("i-2", true).
+			AddReplicaSet(rs).
+			AddScheduledPod(rsPod1, "i-1").
+			AddScheduledPod(env.NewTestPod("placeholder", resource.MustParse("4"), resource.MustParse("30Gi")), "i-2").
+			AddPod(rsPod2)
+
+		env.StepOnce().
+			ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-2", delta: 1}).
+			SetScaleUpError("ng-2", "No instances are available")
+
+		// Don't scale up other node pools until the timeout expires
+		env.StepFor(13 * time.Minute).ExpectNoCommands()
+
+		// Now we can fall back to the other zones
+		env.StepOnce().ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-1", delta: 1})
 	})
 }
