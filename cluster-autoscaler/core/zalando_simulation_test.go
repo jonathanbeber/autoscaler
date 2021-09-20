@@ -638,3 +638,53 @@ func TestEmulatedTopologySpreadConstraint(t *testing.T) {
 		env.StepFor(5 * time.Minute).ExpectNoCommands()
 	})
 }
+
+func TestEmulatedTopologySpreadConstraintScaleDownSameZoneBlockedNoCandidates(t *testing.T) {
+	opts := defaultZalandoAutoscalingOptions()
+
+	RunSimulation(t, opts, 10*time.Second, func(env *zalandoTestEnv) {
+		rs := NewTestReplicaSet("foo", 2)
+
+		rsPod1 := WithEmulatedTopologySpreadConstraint(NewReplicaSetPod(rs, resource.MustParse("1m"), resource.MustParse("8Gi")), rs.Name)
+		rsPod2 := WithEmulatedTopologySpreadConstraint(NewReplicaSetPod(rs, resource.MustParse("1m"), resource.MustParse("8Gi")), rs.Name)
+
+		env.AddNodeGroup("ng-1", 10000, resource.MustParse("4"), resource.MustParse("32Gi"), map[string]string{corev1.LabelZoneFailureDomainStable: "eu-central-1a"}).
+			AddNodeGroup("ng-2", 10000, resource.MustParse("4"), resource.MustParse("32Gi"), map[string]string{corev1.LabelZoneFailureDomainStable: "eu-central-1b"}).
+			AddInstance("ng-1", "i-1", true).AddNode("i-1", true).
+			AddInstance("ng-2", "i-2", true).AddNode("i-2", true).
+			AddReplicaSet(rs).
+			AddScheduledPod(rsPod1, "i-1").
+			AddScheduledPod(rsPod2, "i-2")
+
+		// Don't scale down here because this will break the spread constraints
+		env.StepFor(20 * time.Minute).
+			ExpectNoCommands()
+	})
+}
+
+func TestEmulatedTopologySpreadConstraintScaleDownSameZone(t *testing.T) {
+	opts := defaultZalandoAutoscalingOptions()
+
+	RunSimulation(t, opts, 10*time.Second, func(env *zalandoTestEnv) {
+		rs := NewTestReplicaSet("foo", 2)
+
+		rsPod1 := WithEmulatedTopologySpreadConstraint(NewReplicaSetPod(rs, resource.MustParse("1m"), resource.MustParse("8Gi")), rs.Name)
+		rsPod2 := WithEmulatedTopologySpreadConstraint(NewReplicaSetPod(rs, resource.MustParse("1m"), resource.MustParse("8Gi")), rs.Name)
+
+		env.AddNodeGroup("ng-1", 10000, resource.MustParse("4"), resource.MustParse("32Gi"), map[string]string{corev1.LabelZoneFailureDomainStable: "eu-central-1a"}).
+			AddNodeGroup("ng-2", 10000, resource.MustParse("4"), resource.MustParse("32Gi"), map[string]string{corev1.LabelZoneFailureDomainStable: "eu-central-1b"}).
+			AddInstance("ng-1", "i-1", true).AddNode("i-1", true).
+			AddInstance("ng-2", "i-2", true).AddNode("i-2", true).
+			AddInstance("ng-2", "i-3", true).AddNode("i-3", true).
+			AddReplicaSet(rs).
+			AddScheduledPod(rsPod1, "i-1").
+			AddScheduledPod(rsPod2, "i-2").
+			AddScheduledPod(NewTestPod("blocker", resource.MustParse("1m"), resource.MustParse("1Mi")), "i-3")
+
+		// blocker pod can't be moved, and moving rsPod2 on the same node wouldn't break the spread constraints
+		env.StepFor(20*time.Minute).
+			ExpectCommands(
+				zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandEvictPod, podNamespace: rsPod2.Namespace, podName: rsPod2.Name},
+				zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandDeleteNodes, nodeGroup: "ng-2", nodeNames: []string{"i-2"}})
+	})
+}
