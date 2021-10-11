@@ -243,6 +243,11 @@ func (a *StaticAutoscaler) RunOnce(currentTime time.Time) errors.AutoscalerError
 		klog.Errorf("Failed to get node list: %v", typedErr)
 		return typedErr
 	}
+
+	availableZones := collectAvailableZones(allNodes)
+	nodeZoneMapping := collectNodeZoneMapping(allNodes)
+	scheduledPodLister = topologySpreadEmulationWrapScheduledPodLister(scheduledPodLister, a.AutoscalingOptions, nodeZoneMapping)
+
 	originalScheduledPods, err := scheduledPodLister.List()
 	if err != nil {
 		klog.Errorf("Failed to list scheduled pods: %v", err)
@@ -252,6 +257,9 @@ func (a *StaticAutoscaler) RunOnce(currentTime time.Time) errors.AutoscalerError
 	if a.actOnEmptyCluster(allNodes, readyNodes, currentTime) {
 		return nil
 	}
+
+	existingPodDistribution := a.collectAZDistributions(nodeZoneMapping, originalScheduledPods)
+	unschedulablePodLister = topologySpreadEmulationWrapUnschedulablePodLister(unschedulablePodLister, a.AutoscalingOptions, availableZones, existingPodDistribution, currentTime)
 
 	daemonsets, err := a.ListerRegistry.DaemonSetLister().List(labels.Everything())
 	if err != nil {

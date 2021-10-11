@@ -1173,7 +1173,7 @@ func (sd *ScaleDown) deleteNode(node *apiv1.Node, pods []*apiv1.Pod,
 	sd.context.Recorder.Eventf(node, apiv1.EventTypeNormal, "ScaleDown", "marked the node as toBeDeleted/unschedulable")
 
 	// attempt drain
-	evictionResults, err := drainNode(node, pods, sd.context.ClientSet, sd.context.Recorder, sd.context.MaxGracefulTerminationSec, sd.context.MaxPodEvictionTime, EvictionRetryTime, PodEvictionHeadroom)
+	evictionResults, err := drainNode(node, pods, sd.context.ClientSet, sd.context.Recorder, sd.context.MaxGracefulTerminationSec, sd.context.MaxPodEvictionTime, EvictionRetryTime, PodEvictionHeadroom, sd.runSync)
 	if err != nil {
 		return status.NodeDeleteResult{ResultType: status.NodeDeleteErrorFailedToEvictPods, Err: err, PodEvictionResults: evictionResults}
 	}
@@ -1240,7 +1240,7 @@ func evictPod(podToEvict *apiv1.Pod, client kube_client.Interface, recorder kube
 // them up to MaxGracefulTerminationTime to finish.
 func drainNode(node *apiv1.Node, pods []*apiv1.Pod, client kube_client.Interface, recorder kube_record.EventRecorder,
 	maxGracefulTerminationSec int, maxPodEvictionTime time.Duration, waitBetweenRetries time.Duration,
-	podEvictionHeadroom time.Duration) (evictionResults map[string]status.PodEvictionResult, err error) {
+	podEvictionHeadroom time.Duration, runSync bool) (evictionResults map[string]status.PodEvictionResult, err error) {
 
 	evictionResults = make(map[string]status.PodEvictionResult)
 	toEvict := len(pods)
@@ -1248,9 +1248,15 @@ func drainNode(node *apiv1.Node, pods []*apiv1.Pod, client kube_client.Interface
 	confirmations := make(chan status.PodEvictionResult, toEvict)
 	for _, pod := range pods {
 		evictionResults[pod.Name] = status.PodEvictionResult{Pod: pod, TimedOut: true, Err: nil}
-		go func(podToEvict *apiv1.Pod) {
+		evictFunc := func(podToEvict *apiv1.Pod) {
 			confirmations <- evictPod(podToEvict, client, recorder, maxGracefulTerminationSec, retryUntil, waitBetweenRetries)
-		}(pod)
+		}
+
+		if runSync {
+			evictFunc(pod)
+		} else {
+			go evictFunc(pod)
+		}
 	}
 
 	for range pods {

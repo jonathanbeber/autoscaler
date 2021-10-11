@@ -147,8 +147,8 @@ type AutoscalingOptions struct {
 	BackoffNoFullScaleDown bool
 	// MaxPodEvictionTime is the maximum time CA tries to evict a pod before giving up.
 	MaxPodEvictionTime time.Duration
-	// If pods with topology spread constraints are present, cap the scale-up size at the number of groups divided by the scale factor.
-	TopologySpreadConstraintSplitFactor int
 	// Don't cache instances returned by the cloud provider
 	DisableNodeInstancesCache bool
+	// Emulate topology spread constraints using this label
+	EmulatedTopologySpreadConstraintLabel string
 }
