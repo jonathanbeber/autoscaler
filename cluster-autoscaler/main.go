@@ -178,6 +178,7 @@ var (
 	disableNodeInstancesCache             = flag.Bool("disable-node-instances-cache", false, "Disable the cloud provider instance cache.")
 	schedulablePodsAllowScaleDown         = flag.Bool("scale-down-ignore-schedulable-pods", false, "Allow scaling down when there are schedulable but not scheduled pods.")
 	emulatedTopologySpreadConstraintLabel = flag.String("emulated-topology-spread-constraint-label", "parent-resource-hash", "Emulate TopologySpreadConstraint using this label with a faster algorithm")
+	maxUnschedulablePodsConsidered        = flag.Int("max-unschedulable-pods-considered", 0, "Limit the scale-up evaluation to the first N pods only")
 
 	ignoreTaintsFlag         = multiStringFlag("ignore-taint", "Specifies a taint to ignore in node templates when considering to scale a node group")
 	awsUseStaticInstanceList = flag.Bool("aws-use-static-instance-list", false, "Should CA fetch instance types in runtime or use a static list. AWS only")
@@ -258,6 +259,7 @@ func createAutoscalingOptions() config.AutoscalingOptions {
 		MaxPodEvictionTime:                    *maxPodEvictionTime,
 		DisableNodeInstancesCache:             *disableNodeInstancesCache,
 		EmulatedTopologySpreadConstraintLabel: *emulatedTopologySpreadConstraintLabel,
+		MaxUnschedulablePodsConsidered:        *maxUnschedulablePodsConsidered,
 	}
 }
 

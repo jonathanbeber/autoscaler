@@ -464,6 +464,7 @@ func defaultZalandoAutoscalingOptions() config.AutoscalingOptions {
 		BackoffNoFullScaleDown:                true,
 		DisableNodeInstancesCache:             true,
 		EmulatedTopologySpreadConstraintLabel: emulatedTopologySpreadConstraintLabel,
+		MaxUnschedulablePodsConsidered:        0,
 	}
 }
 
