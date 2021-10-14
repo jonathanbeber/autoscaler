@@ -151,4 +151,6 @@ type AutoscalingOptions struct {
 	DisableNodeInstancesCache bool
 	// Emulate topology spread constraints using this label
 	EmulatedTopologySpreadConstraintLabel string
+	// Limit the number of unschedulable pods considered for every attempt
+	MaxUnschedulablePodsConsidered int
 }

@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -325,6 +326,8 @@ func ScaleUp(context *context.AutoscalingContext, processors *ca_processors.Auto
 	}
 	glogx.V(1).Over(loggingQuota).Infof("%v other pods are also unschedulable", -loggingQuota.Left())
 
+	unschedulablePods = limitUnschedulablePods(context, unschedulablePods)
+
 	nodesFromNotAutoscaledGroups, err := utils.FilterOutNodesFromNotAutoscaledGroups(nodes, context.CloudProvider)
 	if err != nil {
 		return &status.ScaleUpStatus{Result: status.ScaleUpError}, err.AddPrefix("failed to filter out nodes which are from not autoscaled groups: ")
@@ -593,6 +596,20 @@ func ScaleUp(context *context.AutoscalingContext, processors *ca_processors.Auto
 		PodsRemainUnschedulable: getRemainingPods(podEquivalenceGroups, skippedNodeGroups),
 		ConsideredNodeGroups:    nodeGroups,
 	}, nil
+}
+
+func limitUnschedulablePods(context *context.AutoscalingContext, pods []*apiv1.Pod) []*apiv1.Pod {
+	if context.MaxUnschedulablePodsConsidered <= 0 || len(pods) <= context.MaxUnschedulablePodsConsidered {
+		return pods
+	}
+
+	klog.V(1).Infof("Too many unschedulable pods (%d), only considering the first %d for this scale-up evaluation", len(pods), context.MaxUnschedulablePodsConsidered)
+	sort.SliceStable(pods, func(i, j int) bool {
+		cti := pods[i].CreationTimestamp
+		ctj := pods[j].CreationTimestamp
+		return cti.Before(&ctj)
+	})
+	return pods[:context.MaxUnschedulablePodsConsidered]
 }
 
 func buildNodeInfoForNodeTemplate(nodeTemplate *schedulernodeinfo.NodeInfo, index int) *schedulernodeinfo.NodeInfo {

@@ -749,3 +749,111 @@ func TestEmulatedTopologySpreadConstraintScaleUpFallbackOnTimeout(t *testing.T) 
 		env.StepOnce().ExpectCommands(zalandoTestEnvironmentCommand{commandType: zalandoTestEnvironmentCommandIncreaseSize, nodeGroup: "ng-1", delta: 1})
 	})
 }
+
+func TestMaxUnschedulablePodsConsidered(t *testing.T) {
+	opts := defaultZalandoAutoscalingOptions()
+	opts.MaxUnschedulablePodsConsidered = 500
+
+	RunSimulation(t, opts, 10*time.Second, func(env *zalandoTestEnv) {
+		var groups []string
+
+		currentNodeIndex := 0
+		currentNodePodCount := 0
+
+		const (
+			poolCount         = 5
+			replicasetCount   = 10
+			scheduledReplicas = 500
+			pendingReplicas   = 350
+		)
+
+		var (
+			nodeCPU    = resource.MustParse("4")
+			nodeMemory = resource.MustParse("32Gi")
+
+			replicasetPodCPU    = resource.MustParse("1m")
+			replicasetPodMemory = resource.MustParse("2500Mi")
+
+			scheduledPodsPerNode = func() int {
+				count := 0
+				totalCPU := resource.MustParse("0")
+				totalMemory := resource.MustParse("0")
+
+				for {
+					totalCPU.Add(replicasetPodCPU)
+					totalMemory.Add(replicasetPodMemory)
+					if totalCPU.Cmp(nodeCPU) > 0 || totalMemory.Cmp(nodeMemory) > 0 {
+						return count
+					}
+					count++
+				}
+			}()
+		)
+
+		klog.Infof("Pods per node: %d", scheduledPodsPerNode)
+
+		for i := 0; i < poolCount; i++ {
+			ngId := fmt.Sprintf("ng-%d", i)
+			groups = append(groups, ngId)
+			env.AddNodeGroup(ngId, 10000, nodeCPU, nodeMemory, nil)
+		}
+
+		nextNode := func() {
+			currentNodeIndex++
+			currentNodePodCount = 0
+
+			instanceId := fmt.Sprintf("i-%d", currentNodeIndex)
+
+			env.AddInstance(groups[currentNodeIndex%len(groups)], instanceId, true).
+				AddNode(instanceId, true)
+		}
+
+		nextNode()
+
+		// Create a bunch of replicasets with pods
+		for i := 0; i < replicasetCount; i++ {
+			replicaset := env.NewTestReplicaSet(fmt.Sprintf("rs-%d", i), scheduledReplicas+pendingReplicas)
+			env.AddReplicaSet(replicaset)
+
+			for j := 0; j < scheduledReplicas; j++ {
+				pod := env.NewReplicaSetPod(replicaset, replicasetPodCPU, replicasetPodMemory)
+				if currentNodePodCount >= scheduledPodsPerNode {
+					nextNode()
+				}
+				env.AddScheduledPod(pod, fmt.Sprintf("i-%d", currentNodeIndex))
+				currentNodePodCount++
+			}
+
+			for j := 0; j < pendingReplicas; j++ {
+				pod := env.NewReplicaSetPod(replicaset, replicasetPodCPU, replicasetPodMemory)
+				env.AddPod(pod)
+			}
+		}
+
+		totalNodes := func() int {
+			result := 0
+			for _, group := range groups {
+				result += env.GetTargetSize(group)
+			}
+			return result
+		}
+
+		// We should only scale up for the first MaxUnschedulablePodsConsidered pods, and it shouldn't take ages
+		nodesBefore := totalNodes()
+		klog.Infof("Total nodes before scaling up: %d", totalNodes())
+		env.StepOnce()
+
+		nodesAfter := totalNodes()
+		delta := nodesAfter - nodesBefore
+		klog.Infof("Total nodes after scaling up: %d, upcoming %d", nodesAfter, delta)
+		require.Contains(t, []int{opts.MaxUnschedulablePodsConsidered / scheduledPodsPerNode, (opts.MaxUnschedulablePodsConsidered / scheduledPodsPerNode) + 1}, delta)
+
+		// Six more scale-up attempts should cover the rest of the cluster
+		for i := 0; i < 6; i++ {
+			env.StepOnce().ConsumeCommands()
+		}
+
+		// No further events, since all pending pods are handled
+		env.StepOnce().ExpectNoCommands()
+	})
+}
