@@ -23,7 +23,6 @@ import (
 	"io/ioutil"
 	"os"
 	"regexp"
-	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/services/containerregistry/mgmt/2019-05-01/containerregistry"
@@ -56,9 +55,8 @@ var (
 func init() {
 	credentialprovider.RegisterCredentialProvider("azure",
 		&credentialprovider.CachingDockerConfigProvider{
-			Provider:    NewACRProvider(flagConfigFile),
-			Lifetime:    1 * time.Minute,
-			ShouldCache: func(d credentialprovider.DockerConfig) bool { return len(d) > 0 },
+			Provider: NewACRProvider(flagConfigFile),
+			Lifetime: 1 * time.Minute,
 		})
 }
 
@@ -187,21 +185,13 @@ func (a *acrProvider) Provide(image string) credentialprovider.DockerConfig {
 	klog.V(4).Infof("try to provide secret for image %s", image)
 	cfg := credentialprovider.DockerConfig{}
 
-	defaultConfigEntry := credentialprovider.DockerConfigEntry{
-		Username: "",
-		Password: "",
-		Email:    dummyRegistryEmail,
-	}
-
 	if a.config.UseManagedIdentityExtension {
-		if loginServer := a.parseACRLoginServerFromImage(image); loginServer == "" {
+		if loginServer := parseACRLoginServerFromImage(image); loginServer == "" {
 			klog.V(4).Infof("image(%s) is not from ACR, skip MSI authentication", image)
 		} else {
 			if cred, err := getACRDockerEntryFromARMToken(a, loginServer); err == nil {
 				cfg[loginServer] = *cred
 			}
-			// add ACR anonymous repo support: use empty username and password for anonymous access
-			cfg["*.azurecr.*"] = defaultConfigEntry
 		}
 	} else {
 		// Add our entry for each of the supported container registry URLs
@@ -213,31 +203,13 @@ func (a *acrProvider) Provide(image string) credentialprovider.DockerConfig {
 			}
 			cfg[url] = *cred
 		}
+	}
 
-		// Handle the custom cloud case
-		// In clouds where ACR is not yet deployed, the string will be empty
-		if a.environment != nil && strings.Contains(a.environment.ContainerRegistryDNSSuffix, ".azurecr.") {
-			customAcrSuffix := "*" + a.environment.ContainerRegistryDNSSuffix
-			hasBeenAdded := false
-			for _, url := range containerRegistryUrls {
-				if strings.EqualFold(url, customAcrSuffix) {
-					hasBeenAdded = true
-					break
-				}
-			}
-
-			if !hasBeenAdded {
-				cred := &credentialprovider.DockerConfigEntry{
-					Username: a.config.AADClientID,
-					Password: a.config.AADClientSecret,
-					Email:    dummyRegistryEmail,
-				}
-				cfg[customAcrSuffix] = *cred
-			}
-		}
-
-		// add ACR anonymous repo support: use empty username and password for anonymous access
-		cfg["*.azurecr.*"] = defaultConfigEntry
+	// add ACR anonymous repo support: use empty username and password for anonymous access
+	cfg["*.azurecr.*"] = credentialprovider.DockerConfigEntry{
+		Username: "",
+		Password: "",
+		Email:    dummyRegistryEmail,
 	}
 	return cfg
 }
@@ -280,24 +252,10 @@ func getACRDockerEntryFromARMToken(a *acrProvider, loginServer string) (*credent
 // parseACRLoginServerFromImage takes image as parameter and returns login server of it.
 // Parameter `image` is expected in following format: foo.azurecr.io/bar/imageName:version
 // If the provided image is not an acr image, this function will return an empty string.
-func (a *acrProvider) parseACRLoginServerFromImage(image string) string {
+func parseACRLoginServerFromImage(image string) string {
 	match := acrRE.FindAllString(image, -1)
 	if len(match) == 1 {
 		return match[0]
 	}
-
-	// handle the custom cloud case
-	if a != nil && a.environment != nil {
-		cloudAcrSuffix := a.environment.ContainerRegistryDNSSuffix
-		cloudAcrSuffixLength := len(cloudAcrSuffix)
-		if cloudAcrSuffixLength > 0 {
-			customAcrSuffixIndex := strings.Index(image, cloudAcrSuffix)
-			if customAcrSuffixIndex != -1 {
-				endIndex := customAcrSuffixIndex + cloudAcrSuffixLength
-				return image[0:endIndex]
-			}
-		}
-	}
-
 	return ""
 }
